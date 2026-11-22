@@ -21,6 +21,7 @@ OODA_NO_JAIL ?= 1
 export OO_LIST_AMBIENT_QUOTA
 export OODA_FS_READDIR OODA_FS_WRITEDIR OODA_NO_JAIL
 
+PREFIX ?= $(HOME)/.openooda/bin
 BIN := bin/ooda-console
 FUNC_BIN := bin/test_functional
 REFUSE_BIN := bin/test_refusal
@@ -201,3 +202,8 @@ det: $(BIN)
 
 clean:
 	@rm -rf bin dist .ooda-cache
+
+install: build
+	@mkdir -p $(DESTDIR)$(PREFIX)
+	install -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/ooda-console
+	@echo "installed ooda-console to $(DESTDIR)$(PREFIX)"
