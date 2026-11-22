@@ -1,0 +1,74 @@
+// # ooda-console Refusal Test Suite
+//
+// Logline: Assert that the console refuses a rejected child, a traversal path, an unknown theme, and a key.
+//
+// Setup: Imports the console core pages and the standard engine; every refusal fails closed.
+//
+// Beats:
+//   1. Refuse a program that is empty, relative with a parent segment, or carries a shell metacharacter.
+//   2. Refuse a configuration path that escapes the configuration root.
+//   3. Refuse an unknown theme and an unmapped key event.
+
+import "core/session.oo";
+import "core/pty.oo";
+import "core/rows.oo";
+import "core/surface.oo";
+import "core/config.oo";
+import "ooda-standard/core/app/ui/term/anchor.oo";
+import "ooda-standard/core/app/ui/ootheme.oo";
+
+fn t_ok(cond: Bool, label: String) -> Int {
+    if cond {
+        println("ok " + label);
+        return 1;
+    }
+    println("FAIL " + label);
+    return 0;
+}
+
+fn t_refuse_prog() -> Int {
+    let mut n: Int = 0;
+    n = n + t_ok(console_pty_prog_safe("") == false, "an empty program is refused");
+    n = n + t_ok(console_pty_prog_safe("../evil") == false, "a parent-directory program is refused");
+    n = n + t_ok(console_pty_prog_safe("a;rm") == false, "a shell metacharacter in the program is refused");
+    n = n + t_ok(console_pty_prog_safe("-flag") == false, "a program that looks like a flag is refused");
+    n = n + t_ok(console_pty_prog_safe("bin/emit_vt"), "a plain program path is accepted");
+    return n;
+}
+
+fn t_refuse_config(fs_r: &FsReadCap) -> Int {
+    let mut n: Int = 0;
+    n = n + t_ok(console_config_path_safe("../etc/passwd") == false, "a parent-directory path is refused");
+    n = n + t_ok(console_config_path_safe("a/../../b") == false, "an embedded parent segment is refused");
+    n = n + t_ok(console_config_path_safe("") == false, "an empty path is refused");
+    let cfg: ConsoleConfig = console_config_load(fs_r, "../etc/passwd");
+    n = n + t_ok(cfg.loaded == false && cfg.theme == "ooda-dark",
+            "a refused path falls back to the defaults and loads nothing");
+    return n;
+}
+
+fn t_refuse_engine() -> Int {
+    let mut n: Int = 0;
+    n = n + t_ok(ootheme_known("no-such-theme") == false, "an unknown theme is refused");
+    n = n + t_ok(console_key_bytes("f13", "") == "", "an unmapped key event is refused");
+    n = n + t_ok(console_key_bytes("", "") == "", "an empty key event is refused");
+    let s: ConsoleSession = console_session_new(0, 0);
+    n = n + t_ok(console_session_verify(s), "a session falls back to the default geometry");
+    let rows: List[ConsoleRow] = console_rows_build(console_session_grid(s));
+    n = n + t_ok(list_len(rows) == 24, "the fallback geometry holds twenty four rows");
+    return n;
+}
+
+pub fn main(proc: &ProcessCap, fs_r: &FsReadCap, fs_w: &FsWriteCap, env: &EnvCap,
+        args: List[String]) -> Result[Int, String] {
+    let mut passed: Int = 0;
+    passed = passed + t_refuse_prog();
+    passed = passed + t_refuse_config(fs_r);
+    passed = passed + t_refuse_engine();
+    if passed != 14 {
+        println("FAIL: " + passed.to_string() + "/14 console refusal assertions");
+        return Err("assertions");
+    }
+    println("PASS: 14/14 console refusal assertions");
+    return Ok(0);
+}

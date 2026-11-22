@@ -1,0 +1,17 @@
+// # ooda-console VT Emitter Test Helper
+//
+// Logline: Write a styled VT run so the pty path can be exercised frame by frame.
+//
+// Setup: Prints bytes under the process capability and exits cleanly; the pty runner supplies the process token.
+//
+// Beats:
+//   1. Emit a green run of text and reset the pen, then exit cleanly.
+
+import "ooda-standard/core/primitives/byte/byte.oo";
+
+pub fn main(proc: &ProcessCap, fs: &FsReadCap, fs_w: &FsWriteCap, env: &EnvCap,
+        args: List[String]) -> Result[Int, String] {
+    let esc: String = byte_chr(27);
+    print(esc + "[32mGREEN" + esc + "[0m");
+    return Ok(0);
+}

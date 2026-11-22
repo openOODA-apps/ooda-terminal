@@ -1,0 +1,106 @@
+// # ooda-console Run, PTY Run, And GUI Verbs
+//
+// Logline: Replay a transcript or drive a live child through the shared engine and print the interpreted screen.
+//
+// Setup: Declared capability: Process, FsRead, Env. The child runs under the capability-gated host pty page of ooda-standard.
+//
+// Beats:
+//   1. Replay a transcript file through the engine and print the interpreted screen.
+//   2. Drain a live child into the engine frame by frame and print the interpreted screen and the frame count.
+//   3. Open the window, draw the styled grid every frame, and forward the key events to the child.
+
+import "core/session.oo";
+import "core/pty.oo";
+import "core/rows.oo";
+import "core/surface.oo";
+import "core/config.oo";
+import "cli/cli.oo";
+import "cli/theme.oo";
+import "ooda-standard/fs/os/fs/fs.oo";
+import "ooda-standard/fs/file/fs_grp/fs_invariants.oo";
+import "ooda-standard/core/app/ui/wayland/window.oo";
+import "ooda-standard/core/app/ui/wayland/input.oo";
+import "ooda-standard/core/app/ui/ootheme.oo";
+
+pub const CONSOLE_PTY_IDLE_LIMIT: Int = 12;
+pub const CONSOLE_PTY_STEP_LIMIT: Int = 96;
+
+fn ooconsole_pty_args(args: List[String]) -> List[String] {
+    let mut out: List[String] = list_new();
+    let mut after: Bool = false;
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if after { out = list_push(out, a); }
+        if a == "--" { after = true; }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn ooconsole_print_screen(s: ConsoleSession, ansi: Bool) -> Void {
+    if ansi { println(console_session_ansi(s)); }
+    else { println(console_session_text(s)); }
+}
+
+pub fn ooconsole_run_replay(fs_r: &FsReadCap, env: &EnvCap, args: List[String], name: String,
+        ver: String) -> Result[Int, String] {
+    let path: String = ooconsole_cli_operand(args);
+    if path == "" {
+        println("ERR " + name + ": run needs a transcript path");
+        return Ok(2);
+    }
+    if fs_is_dotdot_traversal(path) != 0 {
+        println("ERR " + name + ": run refuses a parent-directory path");
+        return Ok(2);
+    }
+    if fs_path_exists(fs_r, path) == false {
+        println("ERR " + name + ": run cannot read " + path);
+        return Ok(2);
+    }
+    let rd: Result[String, String] = fs_read_file(fs_r, path);
+    if rd.is_err() {
+        println("ERR " + name + ": run cannot read " + path);
+        return Ok(2);
+    }
+    let cfg: ConsoleConfig = console_config_load(fs_r, "");
+    let s: ConsoleSession = console_session_feed(console_session_new(cfg.cols, cfg.rows), rd.unwrap());
+    ooconsole_print_screen(s, ooconsole_cli_has(args, "--ansi"));
+    println(name + " " + ver + ": replay path=" + path + " frames=" + s.frames.to_string() + " bytes="
+            + s.bytes_in.to_string());
+    return Ok(0);
+}
+
+pub fn ooconsole_pty_run(proc: &ProcessCap, fs_r: &FsReadCap, env: &EnvCap, args: List[String],
+        name: String, ver: String) -> Result[Int, String] {
+    let prog: String = ooconsole_cli_operand(args);
+    if prog == "" {
+        println("ERR " + name + ": pty-run needs a program");
+        return Ok(2);
+    }
+    let cfg: ConsoleConfig = console_config_load(fs_r, "");
+    let p: ConsolePty = console_pty_open(proc, prog, ooconsole_pty_args(args), cfg.rows, cfg.cols);
+    if p.valid == false {
+        println("ERR " + name + ": pty-run refused " + prog + " (" + p.err + ")");
+        return Ok(2);
+    }
+    let mut s: ConsoleSession = console_session_new(cfg.cols, cfg.rows);
+    let mut idle: Int = 0;
+    let mut steps: Int = 0;
+    while steps < CONSOLE_PTY_STEP_LIMIT {
+        let chunk: String = console_pty_read(proc, p, 120);
+        if bytes_len(chunk) == 0 {
+            idle = idle + 1;
+            if idle >= CONSOLE_PTY_IDLE_LIMIT { break; }
+        } else {
+            idle = 0;
+            s = console_session_feed(s, chunk);
+        }
+        steps = steps + 1;
+    }
+    let ec: Int = console_pty_close(proc, p);
+    ooconsole_print_screen(s, ooconsole_cli_has(args, "--ansi"));
+    println(name + " " + ver + ": pty-run prog=" + prog + " frames=" + s.frames.to_string() + " bytes="
+            + s.bytes_in.to_string() + " exit=" + ec.to_string());
+    return Ok(0);
+}

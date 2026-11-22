@@ -1,0 +1,23 @@
+// # ooda-console Root Project Anchor
+//
+// Logline: ooda-console root module anchor re-exporting the console session, the pty child, the row runs, and the surface.
+// Setup: Root module anchor providing component metadata accessors. The VT500 engine itself is not re-implemented here:
+//   it is imported from the shared ooda-standard/core/app/ui/term toolkit.
+// Beats:
+//   1. Re-export the console session, pty child, row run, surface, and config pages.
+//   2. Provide component version and name accessors.
+//   3. Keep the public entry surface minimal and deterministic; deny ambient authority.
+
+import "core/session.oo";
+import "core/pty.oo";
+import "core/rows.oo";
+import "core/surface.oo";
+import "core/config.oo";
+
+pub fn ooconsole_version() -> String {
+    return "0.1.0";
+}
+
+pub fn ooconsole_component_name() -> String {
+    return "ooda-console";
+}

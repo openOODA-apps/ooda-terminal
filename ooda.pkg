@@ -1,0 +1,12 @@
+name=ooda-console
+version=0.1.0
+layer=apps
+category=UI
+tags=terminal,vt500,console,pty,wayland,apps
+upstream=none
+status=shipped
+description=apps-layer GUI terminal front end that runs a child in a PTY and renders its VT500 output through the shared ooda-standard terminal engine
+caps=FsRead,FsWrite,Fs,Process,Env,Ffi
+deps=ooda-standard
+entry=cli/main.oo
+payload=cli/main.oo

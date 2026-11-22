@@ -1,0 +1,85 @@
+// # ooda-console Configuration
+//
+// Logline: Read the console configuration under the read capability and resolve the theme, the geometry, and the child
+//   program, refusing a traversal or a malformed value.
+// Setup: Declared capability: FsRead. The configuration is read through the standard filesystem page; a missing file is
+//   not an error, it falls back to the documented defaults.
+// Beats:
+//   1. Read the configuration file and parse one key=value pair per line.
+//   2. Resolve the theme, the column count, the row count, and the child program, refusing an out-of-range value.
+//   3. Refuse a path that escapes the configuration root and fall back to the defaults when the file is absent.
+
+import "ooda-standard/fs/os/fs/fs.oo";
+import "ooda-standard/fs/os/fs.oo";
+import "ooda-standard/fs/file/fs_grp/fs_invariants.oo";
+import "ooda-standard/core/app/ui/ootheme.oo";
+
+pub type ConsoleConfig = struct {
+    theme: String,
+    cols: Int,
+    rows: Int,
+    prog: String,
+    loaded: Bool
+};
+
+pub const CONSOLE_DEFAULT_THEME: String = "ooda-dark";
+pub const CONSOLE_DEFAULT_COLS: Int = 80;
+pub const CONSOLE_DEFAULT_ROWS: Int = 24;
+
+fn console_config_default() -> ConsoleConfig {
+    return ConsoleConfig { theme: CONSOLE_DEFAULT_THEME, cols: CONSOLE_DEFAULT_COLS, rows: CONSOLE_DEFAULT_ROWS,
+            prog: "", loaded: false };
+}
+
+pub fn console_config_path_safe(path: String) -> Bool {
+    if chars_len(path) == 0 { return false; }
+    if str_contains(path, "..") { return false; }
+    return oo_path_ok(path);
+}
+
+fn console_config_value(body: String, key: String) -> String {
+    let lines: List[String] = str_split(body, "\n");
+    let mut i: Int = 0;
+    while i < list_len(lines) {
+        let ln: String = str_trim(list_get(lines, i));
+        if str_starts_with(ln, key + "=") {
+            return str_trim(str_slice(ln, chars_len(key) + 1, chars_len(ln)));
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+fn console_config_count(value: String, fallback: Int) -> Int {
+    if bytes_len(value) == 0 { return fallback; }
+    let mut n: Int = 0;
+    let mut i: Int = 0;
+    while i < bytes_len(value) {
+        let b: Int = byte_at(value, i);
+        if b < 48 || b > 57 { return fallback; }
+        n = n * 10 + (b - 48);
+        if n > 4096 { return fallback; }
+        i = i + 1;
+    }
+    if n <= 0 { return fallback; }
+    return n;
+}
+
+pub fn console_config_load(fs_r: &FsReadCap, path: String) -> ConsoleConfig {
+    let mut cfg: ConsoleConfig = console_config_default();
+    if console_config_path_safe(path) == false { return cfg; }
+    if fs_path_exists(fs_r, path) == false { return cfg; }
+    let rd: Result[String, String] = fs_read_file(fs_r, path);
+    if rd.is_err() { return cfg; }
+    let body: String = rd.unwrap();
+    let theme: String = console_config_value(body, "theme");
+    if theme != "" && ootheme_known(theme) { cfg.theme = theme; }
+    let cols: String = console_config_value(body, "cols");
+    if cols != "" { cfg.cols = console_config_count(cols, CONSOLE_DEFAULT_COLS); }
+    let rows: String = console_config_value(body, "rows");
+    if rows != "" { cfg.rows = console_config_count(rows, CONSOLE_DEFAULT_ROWS); }
+    let prog: String = console_config_value(body, "prog");
+    if prog != "" { cfg.prog = prog; }
+    cfg.loaded = true;
+    return cfg;
+}

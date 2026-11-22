@@ -1,0 +1,108 @@
+// # ooda-console CLI Argument & Metadata Helpers
+//
+// Logline: Fail-closed subcommand detection, one operand-taking verb, and the metadata emitters for the console CLI.
+// Setup: Declared capability: None. Pure argument parsing over the runtime supplied argument list.
+// Beats:
+//   1. Map each known flag or bare subcommand to its mode. The --json and --self-test arguments are flags and the
+//     verb is selected independently of argument order.
+//   2. Return "unknown" when ANY argument is not recognized (fail closed). More than one verb is a conflict. The
+//     run, pty-run, gui, and theme verbs take exactly one operand.
+//   3. Emit the help text and the JSON metadata record for the component.
+
+pub fn ooconsole_cli_has(args: List[String], flag: String) -> Bool {
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if a == "--" { return false; }
+        if a == flag { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn ooconsole_cli_kind(a: String) -> String {
+    if a == "-h" { return "help"; }
+    if a == "--help" { return "help"; }
+    if a == "-v" { return "version"; }
+    if a == "--version" { return "version"; }
+    if a == "--json" { return "json"; }
+    if a == "--ansi" { return "ansi"; }
+    if a == "--self-test" { return "selftest"; }
+    if a == "status" { return "status"; }
+    if a == "verify" { return "verify"; }
+    if a == "inspect" { return "inspect"; }
+    if a == "theme" { return "theme"; }
+    if a == "run" { return "run"; }
+    if a == "pty-run" { return "pty-run"; }
+    if a == "gui" { return "gui"; }
+    if a == "about" { return "about"; }
+    return "";
+}
+
+pub fn ooconsole_cli_mode(args: List[String]) -> String {
+    if list_len(args) == 0 { return "default"; }
+    let a0: String = list_get(args, 0);
+    if a0 == "about" { return "about"; }
+    if a0 == "--json" && list_len(args) > 1 && list_get(args, 1) == "about" { return "about"; }
+    let mut verbs: Int = 0;
+    let mut verb: String = "";
+    let mut want_op: Bool = false;
+    let mut got_op: Bool = false;
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if a == "--" && verb == "pty-run" && got_op { break; }
+        let k: String = ooconsole_cli_kind(a);
+        if k == "" {
+            if want_op && got_op == false {
+                got_op = true;
+                i = i + 1;
+                continue;
+            }
+            return "unknown";
+        }
+        if k == "help" || k == "version" || k == "json" || k == "ansi" || k == "selftest" {
+            i = i + 1;
+            continue;
+        }
+        verbs = verbs + 1;
+        if verbs == 1 {
+            verb = k;
+            want_op = (k == "run" || k == "theme" || k == "pty-run" || k == "gui");
+        }
+        i = i + 1;
+    }
+    if verbs > 1 { return "conflict"; }
+    if ooconsole_cli_has(args, "--help") || ooconsole_cli_has(args, "-h") { return "help"; }
+    if ooconsole_cli_has(args, "--version") || ooconsole_cli_has(args, "-v") { return "version"; }
+    if verbs == 0 { return "default"; }
+    return verb;
+}
+
+pub fn ooconsole_cli_operand(args: List[String]) -> String {
+    let mut want: Bool = false;
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if a == "--" { break; }
+        let k: String = ooconsole_cli_kind(a);
+        if k == "run" || k == "theme" || k == "pty-run" || k == "gui" { want = true; }
+        if k == "" && want { return a; }
+        i = i + 1;
+    }
+    return "";
+}
+
+pub fn ooconsole_cli_print_help(name: String, ver: String, desc: String) -> Int {
+    println(name + " " + ver + " - " + desc);
+    println("usage: " + name + " run <file> [--ansi] | pty-run <prog> [-- <args...>] | gui [prog]");
+    println("       theme [name] | inspect | status | verify | about [--json]");
+    println("       [--json] [--self-test] [--help] [--version]");
+    return 0;
+}
+
+pub fn ooconsole_cli_json(name: String, ver: String, layer: String, cat: String, active: Int,
+        status: String) -> String {
+    return "{\"component\":\"" + name + "\",\"version\":\"" + ver + "\",\"layer\":\"" + layer + "\",\"category\":\""
+            + cat + "\",\"active\":" + active.to_string() + ",\"status\":\"" + status + "\"}";
+}

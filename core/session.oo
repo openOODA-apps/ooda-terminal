@@ -1,0 +1,81 @@
+// # ooda-console Engine Session
+//
+// Logline: Drive a child byte stream through the shared VT500 engine and expose the styled grid, the text dump, and the
+//   rendered frame.
+// Setup: Declared capability: None. Pure value arithmetic over the shared ooda-standard terminal engine; the engine
+//   lives in ooda-standard/core/app/ui/term and is imported, never re-implemented.
+// Beats:
+//   1. Build a session from a fresh parser and an empty screen at the requested geometry.
+//   2. Feed one byte chunk into the engine and count a frame only when the screen digest changes.
+//   3. Expose the styled grid, the plain text dump, the ANSI dump, the rendered frame, and the session integrity.
+
+import "ooda-standard/core/app/ui/term/anchor.oo";
+
+pub type ConsoleSession = struct {
+    replay: TermReplay,
+    frames: Int,
+    bytes_in: Int,
+    digest: Int,
+    valid: Bool
+};
+
+fn console_grid_digest(g: TermGrid) -> Int {
+    let mut h: Int = 1469598103934665603;
+    let mut row: Int = 0;
+    while row < g.row_count {
+        let mut col: Int = 0;
+        while col < g.cols {
+            let cell: TermCell = grid_get(g, row, col);
+            h = ((h ^ cell.codepoint) * 1099511628211) & 4611686018427387903;
+            h = ((h ^ cell.fg) * 1099511628211) & 4611686018427387903;
+            h = ((h ^ cell.bg) * 1099511628211) & 4611686018427387903;
+            h = ((h ^ cell.attrs) * 1099511628211) & 4611686018427387903;
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    return h;
+}
+
+pub fn console_session_new(cols: Int, rows: Int) -> ConsoleSession {
+    let rp: TermReplay = replay_new(cols, rows);
+    let g: TermGrid = screen_grid(replay_screen(rp));
+    return ConsoleSession { replay: rp, frames: 0, bytes_in: 0, digest: console_grid_digest(g), valid: true };
+}
+
+pub fn console_session_feed(s: ConsoleSession, chunk: String) -> ConsoleSession {
+    if s.valid == false { return s; }
+    let rp: TermReplay = replay_feed_text(s.replay, chunk);
+    let g: TermGrid = screen_grid(replay_screen(rp));
+    let d: Int = console_grid_digest(g);
+    let mut out: ConsoleSession = s;
+    out.replay = rp;
+    out.bytes_in = s.bytes_in + bytes_len(chunk);
+    if d != s.digest {
+        out.digest = d;
+        out.frames = s.frames + 1;
+    }
+    return out;
+}
+
+pub fn console_session_grid(s: ConsoleSession) -> TermGrid {
+    return screen_grid(replay_screen(s.replay));
+}
+
+pub fn console_session_text(s: ConsoleSession) -> String {
+    return replay_dump(s.replay);
+}
+
+pub fn console_session_ansi(s: ConsoleSession) -> String {
+    return replay_ansi(s.replay);
+}
+
+pub fn console_session_frame(s: ConsoleSession) -> RenderFrame {
+    return replay_raster(s.replay);
+}
+
+pub fn console_session_verify(s: ConsoleSession) -> Bool {
+    if s.valid == false { return false; }
+    if s.bytes_in < 0 || s.frames < 0 { return false; }
+    return replay_verify(s.replay);
+}

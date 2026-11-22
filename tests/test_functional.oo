@@ -1,0 +1,127 @@
+// # ooda-console Functional Test Suite
+//
+// Logline: Assert that the shared engine interprets a live child and that the grid becomes styled row runs.
+//
+// Setup: Imports the console core pages and the standard engine; the pty case supplies the process token.
+//
+// Beats:
+//   1. Feed a styled VT sequence through the engine and assert the grid cell, the colour, and the text dump.
+//   2. Spawn a real child in a pty and assert the interpreted screen holds what the child wrote.
+//   3. Assert the row runs, the key translation, and the configuration fallback.
+
+import "core/session.oo";
+import "core/pty.oo";
+import "core/rows.oo";
+import "core/surface.oo";
+import "core/config.oo";
+import "ooda-standard/core/app/ui/term/anchor.oo";
+import "ooda-standard/core/primitives/byte/byte.oo";
+
+fn t_ok(cond: Bool, label: String) -> Int {
+    if cond {
+        println("ok " + label);
+        return 1;
+    }
+    println("FAIL " + label);
+    return 0;
+}
+
+fn t_engine() -> Int {
+    let esc: String = byte_chr(27);
+    let mut s: ConsoleSession = console_session_new(20, 4);
+    s = console_session_feed(s, esc + "[32mGREEN" + esc + "[0m");
+    let g: TermGrid = console_session_grid(s);
+    let cell: TermCell = grid_get(g, 0, 0);
+    let mut n: Int = 0;
+    n = n + t_ok(console_session_verify(s), "the engine session verifies after a feed");
+    n = n + t_ok(cell.codepoint == 71 && cell.fg == color_indexed(2),
+            "a styled vt run lands in the grid with its colour");
+    n = n + t_ok(console_session_text(s) == "GREEN", "the screen dumps the interpreted text");
+    n = n + t_ok(s.frames == 1 && s.bytes_in == 14, "the session counts one frame over the fed bytes");
+    n = n + t_ok(str_contains(console_session_ansi(s), "38;5;2") && str_contains(console_session_ansi(s), "GREEN"),
+            "the screen dumps the styled text");
+    return n;
+}
+
+fn t_rows() -> Int {
+    let esc: String = byte_chr(27);
+    let mut s: ConsoleSession = console_session_new(10, 3);
+    s = console_session_feed(s, esc + "[32mAB" + esc + "[0mC");
+    let rows: List[ConsoleRow] = console_rows_build(console_session_grid(s));
+    let mut n: Int = 0;
+    n = n + t_ok(list_len(rows) == 3, "the grid folds into one row per visible line");
+    n = n + t_ok(console_row_text(list_get(rows, 0)) == "ABC", "the first row carries the written text");
+    n = n + t_ok(console_runs_count(rows) == 2, "the style change splits the row into two runs");
+    n = n + t_ok(list_get(list_get(rows, 0).runs, 0).fg == color_indexed(2),
+            "the first run keeps the green pen");
+    n = n + t_ok(list_get(list_get(rows, 0).runs, 1).fg == color_default(),
+            "the second run returns to the default pen");
+    return n;
+}
+
+fn t_keys() -> Int {
+    let mut n: Int = 0;
+    n = n + t_ok(console_key_bytes("enter", "") == byte_chr(13), "enter maps to the return byte");
+    n = n + t_ok(console_key_bytes("backspace", "") == byte_chr(127), "backspace maps to the delete byte");
+    n = n + t_ok(console_key_bytes("up", "") == byte_chr(27) + "[A", "the arrow keys map to a cursor sequence");
+    n = n + t_ok(console_key_bytes("", "q") == "q", "a printable key maps to itself");
+    n = n + t_ok(console_key_bytes("", "") == "", "an unmapped key is refused");
+    return n;
+}
+
+fn t_pty(proc: &ProcessCap, fs_r: &FsReadCap) -> Int {
+    let p: ConsolePty = console_pty_open(proc, "bin/emit_vt", list_new(), 24, 80);
+    if p.valid == false {
+        return t_ok(false, "a child opens a pty under the capability-gated host page");
+    }
+    let mut s: ConsoleSession = console_session_new(20, 4);
+    let mut idle: Int = 0;
+    let mut steps: Int = 0;
+    while steps < 48 && idle < 6 {
+        let chunk: String = console_pty_read(proc, p, 120);
+        if bytes_len(chunk) == 0 { idle = idle + 1; }
+        else {
+            idle = 0;
+            s = console_session_feed(s, chunk);
+        }
+        steps = steps + 1;
+    }
+    let ec: Int = console_pty_close(proc, p);
+    let g: TermGrid = console_session_grid(s);
+    let cell: TermCell = grid_get(g, 0, 0);
+    let mut n: Int = 0;
+    n = n + t_ok(cell.codepoint == 71 && cell.fg == color_indexed(2),
+            "a live child is interpreted by the engine, not echoed");
+    n = n + t_ok(console_session_text(s) == "GREEN", "the live screen holds the text the child wrote");
+    n = n + t_ok(s.frames >= 1, "the live drain counted at least one frame");
+    n = n + t_ok(ec == 0, "the live child exits cleanly");
+    n = n + t_ok(console_pty_prog_safe("bin/emit_vt") && console_pty_prog_safe("../evil") == false,
+            "a rejected program path is refused");
+    return n;
+}
+
+fn t_config(fs_r: &FsReadCap) -> Int {
+    let cfg: ConsoleConfig = console_config_load(fs_r, "");
+    let mut n: Int = 0;
+    n = n + t_ok(cfg.theme == "ooda-dark" && cfg.cols == 80 && cfg.rows == 24,
+            "a missing configuration falls back to the documented defaults");
+    n = n + t_ok(console_config_path_safe("../etc/passwd") == false, "a traversal path is refused");
+    n = n + t_ok(console_config_path_safe("cfg/console.oot"), "a plain configuration path is accepted");
+    return n;
+}
+
+pub fn main(proc: &ProcessCap, fs_r: &FsReadCap, fs_w: &FsWriteCap, env: &EnvCap,
+        args: List[String]) -> Result[Int, String] {
+    let mut passed: Int = 0;
+    passed = passed + t_engine();
+    passed = passed + t_rows();
+    passed = passed + t_keys();
+    passed = passed + t_pty(proc, fs_r);
+    passed = passed + t_config(fs_r);
+    if passed != 23 {
+        println("FAIL: " + passed.to_string() + "/23 console assertions");
+        return Err("assertions");
+    }
+    println("PASS: 23/23 console assertions");
+    return Ok(0);
+}

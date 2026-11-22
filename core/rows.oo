@@ -1,0 +1,98 @@
+// # ooda-console Styled Row Runs
+//
+// Logline: Flatten the engine grid into per-row runs of same-styled cells so a surface can draw the screen without
+//   re-parsing the terminal state.
+// Setup: Declared capability: None. Pure value arithmetic over TermGrid; the grid itself comes from the shared
+//   ooda-standard terminal engine.
+// Beats:
+//   1. Walk every visible row and group the cells that share one colour and attribute mask into one run.
+//   2. Drop the trailing blank cells of a row and the zero-width continuation cells of a wide glyph.
+//   3. Report the run text and the run count so a caller can draw or assert without touching the grid.
+
+import "ooda-standard/core/app/ui/term/anchor.oo";
+
+pub type ConsoleRun = struct {
+    text: String,
+    fg: Int,
+    bg: Int,
+    attrs: Int,
+    cells: Int
+};
+
+pub type ConsoleRow = struct {
+    runs: List[ConsoleRun],
+    cells: Int
+};
+
+fn console_run_new(text: String, fg: Int, bg: Int, attrs: Int, cells: Int) -> ConsoleRun {
+    return ConsoleRun { text: text, fg: fg, bg: bg, attrs: attrs, cells: cells };
+}
+
+fn console_row_end(g: TermGrid, row: Int) -> Int {
+    let mut end: Int = 0;
+    let mut col: Int = 0;
+    while col < g.cols {
+        let cell: TermCell = grid_get(g, row, col);
+        if grid_cell_is_blank(cell) == false { end = col + 1; }
+        col = col + 1;
+    }
+    return end;
+}
+
+pub fn console_rows_build(g: TermGrid) -> List[ConsoleRow] {
+    let mut out: List[ConsoleRow] = list_new();
+    let mut row: Int = 0;
+    while row < g.row_count {
+        let end: Int = console_row_end(g, row);
+        let mut runs: List[ConsoleRun] = list_new();
+        let mut text: String = "";
+        let mut fg: Int = 0;
+        let mut bg: Int = 0;
+        let mut attrs: Int = 0;
+        let mut cells: Int = 0;
+        let mut col: Int = 0;
+        while col < end {
+            let cell: TermCell = grid_get(g, row, col);
+            let step: Int = if cell.width < 1 { 1 } else { cell.width };
+            if cell.width != 0 {
+                if cells > 0 && (cell.fg != fg || cell.bg != bg || cell.attrs != attrs) {
+                    runs = list_push(runs, console_run_new(text, fg, bg, attrs, cells));
+                    text = "";
+                    cells = 0;
+                }
+                fg = cell.fg;
+                bg = cell.bg;
+                attrs = cell.attrs;
+                text = text + term_dump_char(cell.codepoint);
+                cells = cells + 1;
+            }
+            col = col + step;
+        }
+        if cells > 0 { runs = list_push(runs, console_run_new(text, fg, bg, attrs, cells)); }
+        out = list_push(out, ConsoleRow { runs: runs, cells: end });
+        row = row + 1;
+    }
+    return out;
+}
+
+pub fn console_row_text(row: ConsoleRow) -> String {
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < list_len(row.runs) {
+        let run: ConsoleRun = list_get(row.runs, i);
+        out = out + run.text;
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn console_runs_count(rows: List[ConsoleRow]) -> Int {
+    let mut n: Int = 0;
+    let mut i: Int = 0;
+    while i < list_len(rows) {
+        let row: ConsoleRow = list_get(rows, i);
+        n = n + list_len(row.runs);
+        i = i + 1;
+    }
+    return n;
+}
