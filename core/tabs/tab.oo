@@ -1,0 +1,35 @@
+// # ooda-terminal Terminal Tab
+//
+// Logline: One tab of a terminal, holding its own screen, its identity, and its title.
+// Setup: Declared capability: None. Pure value arithmetic over TermScreen; no ambient authority.
+// Beats:
+//   1. Build a tab with a fresh screen of the requested size.
+//   2. Rename a tab, refusing an empty title.
+//   3. Verify that a tab carries a usable screen and a positive identity.
+
+import "ooda-standard/core/app/ui/term/anchor.oo";
+
+pub type Tab = struct {
+    id: Int,
+    title: String,
+    screen: TermScreen,
+    valid: Bool
+};
+
+pub fn tab_new(id: Int, cols: Int, rows: Int) -> Tab {
+    if id <= 0 { return Tab { id: 0, title: "", screen: screen_new(cols, rows), valid: false }; }
+    return Tab { id: id, title: "", screen: screen_new(cols, rows), valid: true };
+}
+
+pub fn tab_set_title(t: Tab, title: String) -> Tab {
+    let mut out: Tab = t;
+    if title == "" { return t; }
+    out.title = title;
+    return out;
+}
+
+pub fn tab_verify(t: Tab) -> Bool {
+    if t.valid == false { return false; }
+    if t.id <= 0 { return false; }
+    return screen_verify(t.screen);
+}

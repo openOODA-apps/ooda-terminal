@@ -1,0 +1,75 @@
+// # ooda-terminal Shell Exit Status Tracking
+//
+// Logline: Track the last command exit status and the prompt and command counts reported by the OSC 133 marks.
+// Setup: Declared capability: None. Pure value arithmetic over Int counters; no ambient authority.
+// Beats:
+//   1. Count a prompt and a command as the OSC 133 marks arrive.
+//   2. Record the exit status of the finished command and count the failures.
+//   3. Parse the exit status out of a D mark payload, refusing a malformed or out of range value.
+
+pub const STATUS_EXIT_MAX: Int = 255;
+
+pub type Status = struct {
+    last_exit: Int,
+    prompts: Int,
+    commands: Int,
+    failures: Int,
+    valid: Bool
+};
+
+pub fn status_new() -> Status {
+    return Status { last_exit: 0, prompts: 0, commands: 0, failures: 0, valid: true };
+}
+
+pub fn status_prompt(s: Status) -> Status {
+    let mut out: Status = s;
+    out.prompts = s.prompts + 1;
+    return out;
+}
+
+pub fn status_command(s: Status) -> Status {
+    let mut out: Status = s;
+    out.commands = s.commands + 1;
+    return out;
+}
+
+pub fn status_finish(s: Status, code: Int) -> Status {
+    let mut out: Status = s;
+    if code < 0 || code > STATUS_EXIT_MAX { return s; }
+    out.last_exit = code;
+    if code != 0 { out.failures = s.failures + 1; }
+    return out;
+}
+
+pub fn status_last_exit(s: Status) -> Int {
+    if s.valid == false { return 0 - 1; }
+    return s.last_exit;
+}
+
+pub fn status_verify(s: Status) -> Bool {
+    if s.valid == false { return false; }
+    if s.prompts < 0 || s.commands < 0 || s.failures < 0 { return false; }
+    if s.last_exit < 0 || s.last_exit > STATUS_EXIT_MAX { return false; }
+    return true;
+}
+
+pub fn status_exit_code(payload: String) -> Int {
+    let n: Int = chars_len(payload);
+    if n < 3 { return 0 - 1; }
+    if str_slice(payload, 0, 1) != "D" { return 0 - 1; }
+    if str_slice(payload, 1, 2) != ";" { return 0 - 1; }
+    let mut v: Int = 0;
+    let mut digits: Int = 0;
+    let mut i: Int = 2;
+    while i < n {
+        let b: Int = byte_at(payload, i);
+        if b < 48 || b > 57 { return 0 - 1; }
+        let k: Int = b - 48;
+        v = v * 10 + k;
+        if v > STATUS_EXIT_MAX { return 0 - 1; }
+        digits = digits + 1;
+        i = i + 1;
+    }
+    if digits < 1 { return 0 - 1; }
+    return v;
+}

@@ -1,4 +1,4 @@
-// # ooda-console Desktop Window Verbs
+// # ooda-terminal Desktop Window Verbs
 //
 // Logline: Open the desktop window, draw the styled grid into the frame canvas, and forward keys to the child.
 //
@@ -9,56 +9,55 @@
 //   2. Draw the styled row runs of the engine grid into every frame and present it.
 //   3. Translate a key event into the bytes the child expects and write them into the pty.
 
-import "core/session.oo";
+import "core/replay.oo";
 import "core/pty.oo";
 import "core/rows.oo";
 import "core/surface.oo";
 import "core/config.oo";
 import "cli/cli.oo";
-import "cli/theme.oo";
 import "ooda-standard/core/app/ui/wayland/window.oo";
 import "ooda-standard/core/app/ui/wayland/input.oo";
 import "ooda-standard/core/app/ui/ootheme.oo";
 
-pub const CONSOLE_GUI_FRAME_LIMIT: Int = 4096;
+pub const TERMINAL_GUI_FRAME_LIMIT: Int = 4096;
 
-fn ooconsole_gui_draw(ffi: &FfiCap, c: UiCanvas, bf: &mut UiFont, s: ConsoleSession,
+fn ooterm_gui_draw(ffi: &FfiCap, c: UiCanvas, bf: &mut UiFont, s: TerminalReplay,
         pal: OoThemePalette) -> Void {
-    let g: TermGrid = console_session_grid(s);
-    let rows: List[ConsoleRow] = console_rows_build(g);
-    console_surface_draw(ffi, c, bf, rows, pal);
+    let g: TermGrid = terminal_replay_grid(s);
+    let rows: List[TerminalRow] = terminal_rows_build(g);
+    terminal_surface_draw(ffi, c, bf, rows, pal);
 }
 
-pub fn ooconsole_gui_run(fs_r: &FsReadCap, fs_w: &FsWriteCap, fs: &FsCap, env: &EnvCap,
-        proc: &ProcessCap, ffi: &FfiCap, args: List[String], name: String) -> Result<Int, String] {
-    let cfg: ConsoleConfig = console_config_load(fs_r, "");
-    let mut prog: String = ooconsole_cli_operand(args);
+pub fn ooterm_gui_run(fs_r: &FsReadCap, fs_w: &FsWriteCap, fs: &FsCap, env: &EnvCap,
+        proc: &ProcessCap, ffi: &FfiCap, args: List[String], name: String) -> Result[Int, String] {
+    let cfg: TerminalConfig = terminal_config_load(fs_r, "");
+    let mut prog: String = ooterm_cli_operand(args);
     if prog == "" { prog = cfg.prog; }
     if prog == "" {
         println("ERR " + name + ": gui needs a program or a configured prog");
         return Ok(2);
     }
-    let mut win: WlWindow = console_surface_open(fs, fs_w, env, ffi, "Console", cfg.cols, cfg.rows);
+    let mut win: WlWindow = terminal_surface_open(fs, fs_w, env, ffi, "Terminal", cfg.cols, cfg.rows);
     if !win.ok || win.closed {
         println("ERR " + name + ": gui cannot open a wayland surface");
         return Ok(2);
     }
-    let p: ConsolePty = console_pty_open(proc, prog, list_new(), cfg.rows, cfg.cols);
+    let p: TerminalPty = terminal_pty_open(proc, prog, list_new(), cfg.rows, cfg.cols);
     if p.valid == false {
         wl_win_close(ffi, fs, &mut win);
         println("ERR " + name + ": gui refused " + prog + " (" + p.err + ")");
         return Ok(2);
     }
-    let pal: OoThemePalette = ooconsole_theme_resolve(env, "ooda-dark");
-    let mut bf: UiFont = console_surface_font(fs_r, env, 14);
-    let mut s: ConsoleSession = console_session_new(cfg.cols, cfg.rows);
+    let pal: OoThemePalette = ooterm_theme_resolve(env, "ooda-dark");
+    let mut bf: UiFont = terminal_surface_font(fs_r, env, 14);
+    let mut s: TerminalReplay = terminal_replay_new(cfg.cols, cfg.rows);
     let mut frames: Int = 0;
-    while !win.closed && frames < CONSOLE_GUI_FRAME_LIMIT {
-        let chunk: String = console_pty_read(proc, p, 16);
-        if bytes_len(chunk) > 0 { s = console_session_feed(s, chunk); }
+    while !win.closed && frames < TERMINAL_GUI_FRAME_LIMIT {
+        let chunk: String = terminal_pty_read(proc, p, 16);
+        if bytes_len(chunk) > 0 { s = terminal_replay_feed(s, chunk); }
         let c: UiCanvas = wl_win_begin_frame(&mut win);
         if c.addr != 0 {
-            ooconsole_gui_draw(ffi, c, &mut bf, s, pal);
+            ooterm_gui_draw(ffi, c, &mut bf, s, pal);
             let _pr: Bool = wl_win_present(fs, &mut win);
             frames = frames + 1;
         }
@@ -69,13 +68,13 @@ pub fn ooconsole_gui_run(fs_r: &FsReadCap, fs_w: &FsWriteCap, fs: &FsCap, env: &
             if ev.kind == 2 { win.closed = true; }
             if ev.kind == 7 {
                 let action: String = ui_evdev_action(ev.key);
-                let bytes: String = console_key_bytes(action, ev.ch);
-                if bytes != "" { console_pty_write(proc, p, bytes); }
+                let bytes: String = terminal_key_bytes(action, ev.ch);
+                if bytes != "" { terminal_pty_write(proc, p, bytes); }
             }
             i = i + 1;
         }
     }
-    let _ec: Int = console_pty_close(proc, p);
+    let _ec: Int = terminal_pty_close(proc, p);
     wl_win_close(ffi, fs, &mut win);
     println(name + ": gui frames=" + frames.to_string());
     return Ok(0);

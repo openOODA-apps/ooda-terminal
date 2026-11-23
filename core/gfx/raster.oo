@@ -1,0 +1,149 @@
+// # ooda-terminal Sixel Raster Decoder
+//
+// Logline: Decode a sixel body into an RGBA image, honouring the palette, repeat runs, and cursor moves.
+// Setup: Declared capability: None. Pure list arithmetic over the image and palette pages; no ambient authority.
+// Beats:
+//   1. Draw one sixel column, which paints six vertical pixels from the bits of the character.
+//   2. Run a repeat group, which paints the same column the requested number of times.
+//   3. Walk the body, switching palette entries on a number sign and moving the cursor on a dollar or a dash.
+//
+// The image size is given by the caller, so a sixel that paints outside it is refused
+// rather than growing the buffer.
+
+import "core/gfx/image.oo";
+import "core/gfx/sixel.oo";
+
+pub type SixelPal = struct {
+    pal: SixelPalette,
+    color: Int,
+    next: Int
+};
+
+pub type SixelRepeat = struct {
+    image: ImgImage,
+    x: Int,
+    next: Int
+};
+
+fn sixel_draw(img: ImgImage, x: Int, y: Int, ch: Int, rgba: Int) -> ImgImage {
+    let mut out: ImgImage = img;
+    let bits: Int = ch - 63;
+    let mut row: Int = 0;
+    while row < 6 {
+        if (bits & (1 << row)) != 0 {
+            out = img_set_pixel(out, x, y + row, rgba);
+        }
+        row = row + 1;
+    }
+    return out;
+}
+
+fn sixel_palette_step(pal: SixelPalette, payload: String, i: Int) -> SixelPal {
+    let n: Int = bytes_len(payload);
+    let mut p: SixelPalette = pal;
+    let mut color: Int = 0;
+    let mut j: Int = i + 1;
+    let end: Int = sixel_skip_number(payload, j);
+    let idx: Int = sixel_parse_uint(str_slice(payload, j, end));
+    j = end;
+    if idx < 0 { return SixelPal { pal: p, color: 0, next: j }; }
+    if j < n && byte_at(payload, j) == 59 {
+        let after3: Int = sixel_skip_semis(payload, j + 1, 3);
+        let end4: Int = sixel_skip_number(payload, after3);
+        let rgba: Int = sixel_color_spec(str_slice(payload, j + 1, end4));
+        if rgba >= 0 {
+            p = sixel_palette_set(p, idx, rgba);
+            color = rgba;
+        }
+        j = end4;
+    } else {
+        color = sixel_palette_get(p, idx);
+    }
+    return SixelPal { pal: p, color: color, next: j };
+}
+
+fn sixel_repeat_step(img: ImgImage, payload: String, i: Int, x: Int, y: Int, color: Int) -> SixelRepeat {
+    let n: Int = bytes_len(payload);
+    let mut out: ImgImage = img;
+    let mut cx: Int = x;
+    let end: Int = sixel_skip_number(payload, i + 1);
+    let cnt: Int = sixel_parse_uint(str_slice(payload, i + 1, end));
+    let mut j: Int = end;
+    if j < n && cnt > 0 {
+        let ch: Int = byte_at(payload, j);
+        let mut k: Int = 0;
+        while k < cnt {
+            out = sixel_draw(out, cx, y, ch, color);
+            cx = cx + 1;
+            k = k + 1;
+        }
+        j = j + 1;
+    }
+    return SixelRepeat { image: out, x: cx, next: j };
+}
+
+pub fn sixel_raster_size(payload: String) -> Int {
+    let n: Int = bytes_len(payload);
+    let mut i: Int = 0;
+    while i < n {
+        if byte_at(payload, i) == 34 {
+            let ph_at: Int = sixel_skip_semis(payload, i + 1, 2);
+            let ph_end: Int = sixel_skip_number(payload, ph_at);
+            let pv_at: Int = sixel_skip_semis(payload, ph_end, 1);
+            let pv_end: Int = sixel_skip_number(payload, pv_at);
+            let w: Int = sixel_parse_uint(str_slice(payload, ph_at, ph_end));
+            let h: Int = sixel_parse_uint(str_slice(payload, pv_at, pv_end));
+            if w < 0 || h < 0 { return 0; }
+            return w | (h << 16);
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+pub fn sixel_decode(payload: String, width: Int, height: Int) -> ImgImage {
+    let mut img: ImgImage = img_image_new(0, width, height);
+    if img.valid == false { return img; }
+    let n: Int = bytes_len(payload);
+    let mut pal: SixelPalette = sixel_palette_new();
+    let mut color: Int = 0;
+    let mut x: Int = 0;
+    let mut y: Int = 0;
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(payload, i);
+        if b == 35 {
+            let ps: SixelPal = sixel_palette_step(pal, payload, i);
+            pal = ps.pal;
+            color = ps.color;
+            i = ps.next;
+            continue;
+        }
+        if b == 33 {
+            let rp: SixelRepeat = sixel_repeat_step(img, payload, i, x, y, color);
+            img = rp.image;
+            x = rp.x;
+            i = rp.next;
+            continue;
+        }
+        if b == 36 {
+            x = 0;
+            i = i + 1;
+            continue;
+        }
+        if b == 45 {
+            x = 0;
+            y = y + 1;
+            i = i + 1;
+            continue;
+        }
+        if b >= 63 && b <= 126 {
+            img = sixel_draw(img, x, y, b, color);
+            x = x + 1;
+            i = i + 1;
+            continue;
+        }
+        i = i + 1;
+    }
+    return img;
+}

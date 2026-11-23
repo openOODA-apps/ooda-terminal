@@ -1,4 +1,4 @@
-// # ooda-console VT Emitter Test Helper
+// # ooda-terminal VT Emitter Test Helper
 //
 // Logline: Write a styled VT run so the pty path can be exercised frame by frame.
 //

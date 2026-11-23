@@ -1,0 +1,96 @@
+// # ooda-terminal OSC 133 Prompt State Machine
+//
+// Logline: Advance the shell prompt state through the OSC 133 A, B, C, and D marks, refusing any out of order mark.
+// Setup: Declared capability: None. Pure value arithmetic over Int phases; no ambient authority.
+// Beats:
+//   1. Parse an OSC 133 payload into its mark kind, accepting only the exact A, B, and C forms and the D form.
+//   2. Advance the phase from idle through prompt, input, and output, counting the prompts and commands.
+//   3. Refuse a mark that arrives out of order, leaving the phase and the counters untouched.
+
+import "ooda-standard/core/primitives/byte/byte.oo";
+
+pub const PROMPT_OSC_ID: Int = 133;
+pub const PROMPT_IDLE: Int = 0;
+pub const PROMPT_READY: Int = 1;
+pub const PROMPT_INPUT: Int = 2;
+pub const PROMPT_OUTPUT: Int = 3;
+pub const MARK_A: Int = 1;
+pub const MARK_B: Int = 2;
+pub const MARK_C: Int = 3;
+pub const MARK_D: Int = 4;
+
+pub type Prompt = struct {
+    phase: Int,
+    prompts: Int,
+    commands: Int,
+    valid: Bool
+};
+
+pub fn prompt_new() -> Prompt {
+    return Prompt { phase: PROMPT_IDLE, prompts: 0, commands: 0, valid: true };
+}
+
+pub fn prompt_kind(payload: String) -> Int {
+    let n: Int = chars_len(payload);
+    if n < 1 { return 0; }
+    let c: String = str_slice(payload, 0, 1);
+    if c == "A" && n == 1 { return MARK_A; }
+    if c == "B" && n == 1 { return MARK_B; }
+    if c == "C" && n == 1 { return MARK_C; }
+    if c == "D" && (n == 1 || str_slice(payload, 1, 2) == ";") { return MARK_D; }
+    return 0;
+}
+
+pub fn prompt_apply(p: Prompt, kind: Int) -> Prompt {
+    let mut out: Prompt = p;
+    if kind == MARK_A {
+        if p.phase != PROMPT_IDLE { return p; }
+        out.phase = PROMPT_READY;
+        out.prompts = p.prompts + 1;
+        return out;
+    }
+    if kind == MARK_B {
+        if p.phase != PROMPT_READY { return p; }
+        out.phase = PROMPT_INPUT;
+        return out;
+    }
+    if kind == MARK_C {
+        if p.phase != PROMPT_INPUT { return p; }
+        out.phase = PROMPT_OUTPUT;
+        out.commands = p.commands + 1;
+        return out;
+    }
+    if kind == MARK_D {
+        if p.phase != PROMPT_OUTPUT { return p; }
+        out.phase = PROMPT_IDLE;
+        return out;
+    }
+    return p;
+}
+
+pub fn prompt_verify(p: Prompt) -> Bool {
+    if p.valid == false { return false; }
+    if p.phase < PROMPT_IDLE || p.phase > PROMPT_OUTPUT { return false; }
+    if p.prompts < 0 || p.commands < 0 { return false; }
+    return true;
+}
+
+pub fn osc_request() -> String {
+    return byte_chr(27) + "]133;P" + byte_chr(27) + byte_chr(92);
+}
+
+pub fn osc_cwd(path: String) -> String {
+    return byte_chr(27) + "]7;file://" + path + byte_chr(27) + byte_chr(92);
+}
+
+pub fn osc_handshake(cwd: String) -> String {
+    return osc_request() + osc_cwd(cwd);
+}
+
+pub fn osc_mark(kind: Int) -> String {
+    let mut tag: String = "D";
+    if kind == MARK_A { tag = "A"; }
+    if kind == MARK_B { tag = "B"; }
+    if kind == MARK_C { tag = "C"; }
+    return byte_chr(27) + "]133;" + tag + byte_chr(27) + byte_chr(92);
+}

@@ -1,0 +1,90 @@
+// # ooda-terminal Sixel Palette And Parameter Parsing
+//
+// Logline: Hold the sixel colour palette and read the numbers, separators, and colour specs out of a sixel body.
+// Setup: Declared capability: None. Pure list and string arithmetic; no ambient authority.
+// Beats:
+//   1. Hold a palette of up to 256 colours and read one entry back.
+//   2. Skip a decimal number and parse a whole decimal string, refusing anything that is not a number.
+//   3. Read a colour spec of the form 2;r;g;b and turn it into an opaque pixel colour.
+
+import "core/gfx/image.oo";
+
+pub type SixelPalette = struct {
+    colors: List[Int],
+    count: Int,
+    valid: Bool
+};
+
+pub fn sixel_palette_new() -> SixelPalette {
+    return SixelPalette { colors: list_new(), count: 0, valid: true };
+}
+
+pub fn sixel_palette_set(p: SixelPalette, idx: Int, rgba: Int) -> SixelPalette {
+    if p.valid == false { return p; }
+    if idx < 0 || idx > 255 { return p; }
+    let mut colors: List[Int] = p.colors;
+    while list_len(colors) <= idx {
+        colors = list_push(colors, 0);
+    }
+    colors = list_set(colors, idx, rgba);
+    let mut out: SixelPalette = p;
+    out.colors = colors;
+    out.count = list_len(colors);
+    return out;
+}
+
+pub fn sixel_palette_get(p: SixelPalette, idx: Int) -> Int {
+    if p.valid == false { return 0; }
+    if idx < 0 || idx >= list_len(p.colors) { return 0; }
+    return list_get(p.colors, idx);
+}
+
+pub fn sixel_skip_number(s: String, i: Int) -> Int {
+    let n: Int = bytes_len(s);
+    let mut j: Int = i;
+    while j < n {
+        let b: Int = byte_at(s, j);
+        if b < 48 || b > 57 { break; }
+        j = j + 1;
+    }
+    return j;
+}
+
+pub fn sixel_parse_uint(s: String) -> Int {
+    let n: Int = chars_len(s);
+    if n < 1 { return 0 - 1; }
+    let mut v: Int = 0;
+    let mut i: Int = 0;
+    while i < n {
+        let k: Int = img_digit(str_slice(s, i, i + 1));
+        if k < 0 { return 0 - 1; }
+        v = v * 10 + k;
+        if v > 65535 { return 0 - 1; }
+        i = i + 1;
+    }
+    return v;
+}
+
+pub fn sixel_skip_semis(s: String, i: Int, count: Int) -> Int {
+    let n: Int = bytes_len(s);
+    let mut j: Int = i;
+    let mut k: Int = 0;
+    while j < n && k < count {
+        if byte_at(s, j) == 59 { k = k + 1; }
+        j = j + 1;
+    }
+    return j;
+}
+
+pub fn sixel_color_spec(spec: String) -> Int {
+    let parts: List[String] = str_split(spec, ";");
+    if list_len(parts) < 4 { return 0 - 1; }
+    let cs: Int = sixel_parse_uint(list_get(parts, 0));
+    if cs != 2 { return 0 - 1; }
+    let rv: Int = sixel_parse_uint(list_get(parts, 1));
+    let gv: Int = sixel_parse_uint(list_get(parts, 2));
+    let bv: Int = sixel_parse_uint(list_get(parts, 3));
+    if rv < 0 || gv < 0 || bv < 0 { return 0 - 1; }
+    if rv > 255 || gv > 255 || bv > 255 { return 0 - 1; }
+    return (255 << 24) | (rv << 16) | (gv << 8) | bv;
+}

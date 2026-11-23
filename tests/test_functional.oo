@@ -1,21 +1,31 @@
-// # ooda-console Functional Test Suite
-//
-// Logline: Assert that the shared engine interprets a live child and that the grid becomes styled row runs.
-//
-// Setup: Imports the console core pages and the standard engine; the pty case supplies the process token.
-//
+// # ooda-terminal Functional Test Suite
+// Logline: Assert the engine interprets a live child, builds styled row runs, and holds feature contracts.
+// Setup: Imports the terminal core and feature pages and standard engine; pty supplies the process token.
 // Beats:
 //   1. Feed a styled VT sequence through the engine and assert the grid cell, the colour, and the text dump.
 //   2. Spawn a real child in a pty and assert the interpreted screen holds what the child wrote.
 //   3. Assert the row runs, the key translation, and the configuration fallback.
+//   4. Assert the graphics protocols, the OSC 133 marks, and the tab set.
 
-import "core/session.oo";
+import "core/replay.oo";
 import "core/pty.oo";
 import "core/rows.oo";
 import "core/surface.oo";
 import "core/config.oo";
+import "core/gfx/image.oo";
+import "core/gfx/place.oo";
+import "core/gfx/kitty.oo";
+import "core/gfx/raster.oo";
+import "core/marks/marks.oo";
+import "core/marks/prompt.oo";
+import "core/marks/status.oo";
+import "core/tabs/tab.oo";
+import "core/tabs/split.oo";
+import "core/tabs/layout.oo";
+import "core/tabs/set.oo";
 import "ooda-standard/core/app/ui/term/anchor.oo";
 import "ooda-standard/core/primitives/byte/byte.oo";
+import "ooda-standard/core/encoding/base64_grp/base64.oo";
 
 fn t_ok(cond: Bool, label: String) -> Int {
     if cond {
@@ -28,30 +38,30 @@ fn t_ok(cond: Bool, label: String) -> Int {
 
 fn t_engine() -> Int {
     let esc: String = byte_chr(27);
-    let mut s: ConsoleSession = console_session_new(20, 4);
-    s = console_session_feed(s, esc + "[32mGREEN" + esc + "[0m");
-    let g: TermGrid = console_session_grid(s);
+    let mut s: TerminalReplay = terminal_replay_new(20, 4);
+    s = terminal_replay_feed(s, esc + "[32mGREEN" + esc + "[0m");
+    let g: TermGrid = terminal_replay_grid(s);
     let cell: TermCell = grid_get(g, 0, 0);
     let mut n: Int = 0;
-    n = n + t_ok(console_session_verify(s), "the engine session verifies after a feed");
+    n = n + t_ok(terminal_replay_verify(s), "the replay session verifies after a feed");
     n = n + t_ok(cell.codepoint == 71 && cell.fg == color_indexed(2),
             "a styled vt run lands in the grid with its colour");
-    n = n + t_ok(console_session_text(s) == "GREEN", "the screen dumps the interpreted text");
+    n = n + t_ok(terminal_replay_text(s) == "GREEN", "the screen dumps the interpreted text");
     n = n + t_ok(s.frames == 1 && s.bytes_in == 14, "the session counts one frame over the fed bytes");
-    n = n + t_ok(str_contains(console_session_ansi(s), "38;5;2") && str_contains(console_session_ansi(s), "GREEN"),
+    n = n + t_ok(str_contains(terminal_replay_ansi(s), "38;5;2") && str_contains(terminal_replay_ansi(s), "GREEN"),
             "the screen dumps the styled text");
     return n;
 }
 
 fn t_rows() -> Int {
     let esc: String = byte_chr(27);
-    let mut s: ConsoleSession = console_session_new(10, 3);
-    s = console_session_feed(s, esc + "[32mAB" + esc + "[0mC");
-    let rows: List[ConsoleRow] = console_rows_build(console_session_grid(s));
+    let mut s: TerminalReplay = terminal_replay_new(10, 3);
+    s = terminal_replay_feed(s, esc + "[32mAB" + esc + "[0mC");
+    let rows: List[TerminalRow] = terminal_rows_build(terminal_replay_grid(s));
     let mut n: Int = 0;
     n = n + t_ok(list_len(rows) == 3, "the grid folds into one row per visible line");
-    n = n + t_ok(console_row_text(list_get(rows, 0)) == "ABC", "the first row carries the written text");
-    n = n + t_ok(console_runs_count(rows) == 2, "the style change splits the row into two runs");
+    n = n + t_ok(terminal_row_text(list_get(rows, 0)) == "ABC", "the first row carries the written text");
+    n = n + t_ok(terminal_runs_count(rows) == 2, "the style change splits the row into two runs");
     n = n + t_ok(list_get(list_get(rows, 0).runs, 0).fg == color_indexed(2),
             "the first run keeps the green pen");
     n = n + t_ok(list_get(list_get(rows, 0).runs, 1).fg == color_default(),
@@ -61,52 +71,102 @@ fn t_rows() -> Int {
 
 fn t_keys() -> Int {
     let mut n: Int = 0;
-    n = n + t_ok(console_key_bytes("enter", "") == byte_chr(13), "enter maps to the return byte");
-    n = n + t_ok(console_key_bytes("backspace", "") == byte_chr(127), "backspace maps to the delete byte");
-    n = n + t_ok(console_key_bytes("up", "") == byte_chr(27) + "[A", "the arrow keys map to a cursor sequence");
-    n = n + t_ok(console_key_bytes("", "q") == "q", "a printable key maps to itself");
-    n = n + t_ok(console_key_bytes("", "") == "", "an unmapped key is refused");
+    n = n + t_ok(terminal_key_bytes("enter", "") == byte_chr(13), "enter maps to the return byte");
+    n = n + t_ok(terminal_key_bytes("backspace", "") == byte_chr(127), "backspace maps to the delete byte");
+    n = n + t_ok(terminal_key_bytes("up", "") == byte_chr(27) + "[A", "the arrow keys map to a cursor sequence");
+    n = n + t_ok(terminal_key_bytes("", "q") == "q", "a printable key maps to itself");
+    n = n + t_ok(terminal_key_bytes("", "") == "", "an unmapped key is refused");
     return n;
 }
 
 fn t_pty(proc: &ProcessCap, fs_r: &FsReadCap) -> Int {
-    let p: ConsolePty = console_pty_open(proc, "bin/emit_vt", list_new(), 24, 80);
+    let p: TerminalPty = terminal_pty_open(proc, "bin/emit_vt", list_new(), 24, 80);
     if p.valid == false {
         return t_ok(false, "a child opens a pty under the capability-gated host page");
     }
-    let mut s: ConsoleSession = console_session_new(20, 4);
+    let mut s: TerminalReplay = terminal_replay_new(20, 4);
     let mut idle: Int = 0;
     let mut steps: Int = 0;
     while steps < 48 && idle < 6 {
-        let chunk: String = console_pty_read(proc, p, 120);
+        let chunk: String = terminal_pty_read(proc, p, 120);
         if bytes_len(chunk) == 0 { idle = idle + 1; }
         else {
             idle = 0;
-            s = console_session_feed(s, chunk);
+            s = terminal_replay_feed(s, chunk);
         }
         steps = steps + 1;
     }
-    let ec: Int = console_pty_close(proc, p);
-    let g: TermGrid = console_session_grid(s);
+    let ec: Int = terminal_pty_close(proc, p);
+    let g: TermGrid = terminal_replay_grid(s);
     let cell: TermCell = grid_get(g, 0, 0);
     let mut n: Int = 0;
     n = n + t_ok(cell.codepoint == 71 && cell.fg == color_indexed(2),
             "a live child is interpreted by the engine, not echoed");
-    n = n + t_ok(console_session_text(s) == "GREEN", "the live screen holds the text the child wrote");
+    n = n + t_ok(terminal_replay_text(s) == "GREEN", "the live screen holds the text the child wrote");
     n = n + t_ok(s.frames >= 1, "the live drain counted at least one frame");
     n = n + t_ok(ec == 0, "the live child exits cleanly");
-    n = n + t_ok(console_pty_prog_safe("bin/emit_vt") && console_pty_prog_safe("../evil") == false,
+    n = n + t_ok(terminal_pty_prog_safe("bin/emit_vt") && terminal_pty_prog_safe("../evil") == false,
             "a rejected program path is refused");
     return n;
 }
 
 fn t_config(fs_r: &FsReadCap) -> Int {
-    let cfg: ConsoleConfig = console_config_load(fs_r, "");
+    let cfg: TerminalConfig = terminal_config_load(fs_r, "");
     let mut n: Int = 0;
     n = n + t_ok(cfg.theme == "ooda-dark" && cfg.cols == 80 && cfg.rows == 24,
             "a missing configuration falls back to the documented defaults");
-    n = n + t_ok(console_config_path_safe("../etc/passwd") == false, "a traversal path is refused");
-    n = n + t_ok(console_config_path_safe("cfg/console.oot"), "a plain configuration path is accepted");
+    n = n + t_ok(terminal_config_path_safe("../etc/passwd") == false, "a traversal path is refused");
+    n = n + t_ok(terminal_config_path_safe("cfg/terminal.oot"), "a plain configuration path is accepted");
+    return n;
+}
+
+fn t_features() -> Int {
+    let mut n: Int = 0;
+    let b64: String = base64_encode(byte_chr(255) + byte_chr(0) + byte_chr(0));
+    let kit: String = "Ga=T,f=24,s=1,v=1,c=2,r=1;" + b64;
+    let ctrl: String = kitty_control(kit);
+    n = n + t_ok(ctrl == "a=T,f=24,s=1,v=1,c=2,r=1", "the kitty payload splits into control data and payload");
+    n = n + t_ok(kitty_action(ctrl) == KITTY_ACTION_TRANSMIT && kitty_format(ctrl) == IMG_FMT_RGB24,
+            "the kitty control keys resolve to the action and the pixel format");
+    let kimg: ImgImage = kitty_decode(kitty_data(kit), IMG_FMT_RGB24, 1, 1);
+    let want: Int = (255 << 24) | (255 << 16);
+    n = n + t_ok(img_verify(kimg) && img_pixel(kimg, 0, 0) == want, "a kitty raw pixel payload decodes into an image");
+    let simg: ImgImage = sixel_decode("#0;2;255;0;0~", 1, 6);
+    n = n + t_ok(img_verify(simg) && img_pixel(simg, 0, 0) == want, "a sixel body decodes into an image with its colour");
+    let grid: TermGrid = screen_grid(screen_new(10, 4));
+    let placed: TermGrid = img_place(grid, img_placement_new(7, 0, 0, 2, 1));
+    n = n + t_ok(grid_get(placed, 0, 0).link == 7 && grid_get(placed, 1, 0).link == 0,
+            "a placement marks the covered cells of the grid");
+    let mut p: Prompt = prompt_new();
+    p = prompt_apply(p, MARK_A);
+    let phase_a: Int = p.phase;
+    p = prompt_apply(p, MARK_B);
+    p = prompt_apply(p, MARK_C);
+    p = prompt_apply(p, MARK_D);
+    n = n + t_ok(phase_a == PROMPT_READY && p.phase == PROMPT_IDLE && p.prompts == 1 && p.commands == 1,
+            "the OSC 133 prompt state advances through the four marks");
+    let hs: String = osc_handshake("/tmp");
+    n = n + t_ok(str_contains(hs, "]133;P") && str_contains(hs, "]7;file:///tmp"),
+            "the OSC 133 handshake asks the child for shell integration");
+    let mut ms: Marks = marks_new(8);
+    ms = marks_add(ms, mark_new(MARK_PROMPT, 3));
+    ms = marks_close(ms, MARK_PROMPT, 5, 0 - 1);
+    ms = marks_add(ms, mark_new(MARK_COMMAND, 6));
+    ms = marks_close(ms, MARK_COMMAND, 8, 0);
+    n = n + t_ok(marks_count(ms) == 2 && marks_at(ms, 1).kind == MARK_COMMAND && marks_at(ms, 1).end_row == 8,
+            "the prompt and command boundaries are recorded against their rows");
+    let st: Status = status_finish(status_new(), 3);
+    n = n + t_ok(status_last_exit(st) == 3 && status_exit_code("D;3") == 3,
+            "the exit status of a finished command is recorded and read back");
+    let set: TabSet = tab_set_new(80, 24);
+    let split: TabSet = tab_set_split(set, SPLIT_V, 50);
+    let rects: List[SplitRect] = tab_set_layout(split);
+    n = n + t_ok(list_len(split.tabs) == 2 && list_len(rects) == 2 && layout_verify(split.tree, rects),
+            "a tab set splits into two tabs and tiles into two rectangles");
+    let moved: TabSet = tab_set_focus_next(split);
+    n = n + t_ok(moved.focus != split.focus && tab_set_verify(moved),
+            "the focus steps around the leaves of the split tree");
+    n = n + t_ok(tab_verify(tab_new(1, 80, 24)), "a tab carries a usable screen and a positive identity");
     return n;
 }
 
@@ -118,10 +178,11 @@ pub fn main(proc: &ProcessCap, fs_r: &FsReadCap, fs_w: &FsWriteCap, env: &EnvCap
     passed = passed + t_keys();
     passed = passed + t_pty(proc, fs_r);
     passed = passed + t_config(fs_r);
-    if passed != 23 {
-        println("FAIL: " + passed.to_string() + "/23 console assertions");
+    passed = passed + t_features();
+    if passed != 35 {
+        println("FAIL: " + passed.to_string() + "/35 terminal assertions");
         return Err("assertions");
     }
-    println("PASS: 23/23 console assertions");
+    println("PASS: 35/35 terminal assertions");
     return Ok(0);
 }

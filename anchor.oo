@@ -1,23 +1,37 @@
-// # ooda-console Root Project Anchor
+// # ooda-terminal Root Project Anchor
 //
-// Logline: ooda-console root module anchor re-exporting the console session, the pty child, the row runs, and the surface.
+// Logline: ooda-terminal root module anchor re-exporting the replay session, the pty child, the row runs, the surface,
+//   the configuration, and the terminal feature pages.
 // Setup: Root module anchor providing component metadata accessors. The VT500 engine itself is not re-implemented here:
 //   it is imported from the shared ooda-standard/core/app/ui/term toolkit.
 // Beats:
-//   1. Re-export the console session, pty child, row run, surface, and config pages.
+//   1. Re-export the replay, pty, row, surface, config, graphics, marks, and tabs pages.
 //   2. Provide component version and name accessors.
 //   3. Keep the public entry surface minimal and deterministic; deny ambient authority.
 
-import "core/session.oo";
+import "core/replay.oo";
 import "core/pty.oo";
 import "core/rows.oo";
 import "core/surface.oo";
 import "core/config.oo";
+import "core/gfx/image.oo";
+import "core/gfx/place.oo";
+import "core/gfx/kitty.oo";
+import "core/gfx/sixel.oo";
+import "core/gfx/raster.oo";
+import "core/marks/marks.oo";
+import "core/marks/prompt.oo";
+import "core/marks/status.oo";
+import "core/marks/state.oo";
+import "core/tabs/tab.oo";
+import "core/tabs/split.oo";
+import "core/tabs/layout.oo";
+import "core/tabs/set.oo";
 
-pub fn ooconsole_version() -> String {
-    return "0.1.0";
+pub fn ooterm_version() -> String {
+    return "1.0.0";
 }
 
-pub fn ooconsole_component_name() -> String {
-    return "ooda-console";
+pub fn ooterm_component_name() -> String {
+    return "ooda-terminal";
 }

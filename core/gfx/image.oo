@@ -1,0 +1,79 @@
+// # ooda-terminal Decoded Image Buffer
+//
+// Logline: Hold a decoded image as a row-major buffer of RGBA pixels with its identifier and dimensions.
+// Setup: Declared capability: None. Pure list arithmetic over Int pixels; no ambient authority.
+// Beats:
+//   1. Build an image with a transparent pixel for every cell of its rectangle.
+//   2. Read and write one pixel, refusing every coordinate outside the image.
+//   3. Verify the buffer length against the dimensions and parse a decimal digit.
+
+pub const IMG_FMT_RGB24: Int = 1;
+pub const IMG_FMT_RGBA32: Int = 2;
+pub const IMG_FMT_FILE: Int = 3;
+pub const IMG_MAX_DIM: Int = 4096;
+
+pub type ImgImage = struct {
+    id: Int,
+    width: Int,
+    height: Int,
+    pixels: List[Int],
+    valid: Bool
+};
+
+fn img_image_bad() -> ImgImage {
+    return ImgImage { id: 0, width: 0, height: 0, pixels: list_new(), valid: false };
+}
+
+pub fn img_image_new(id: Int, width: Int, height: Int) -> ImgImage {
+    if width <= 0 || height <= 0 { return img_image_bad(); }
+    if width > IMG_MAX_DIM || height > IMG_MAX_DIM { return img_image_bad(); }
+    let mut px: List[Int] = list_new();
+    let mut i: Int = 0;
+    while i < width * height {
+        px = list_push(px, 0);
+        i = i + 1;
+    }
+    return ImgImage { id: id, width: width, height: height, pixels: px, valid: true };
+}
+
+pub fn img_pixel(img: ImgImage, x: Int, y: Int) -> Int {
+    if img.valid == false { return 0; }
+    if x < 0 || x >= img.width { return 0; }
+    if y < 0 || y >= img.height { return 0; }
+    let at: Int = y * img.width + x;
+    if at >= list_len(img.pixels) { return 0; }
+    return list_get(img.pixels, at);
+}
+
+pub fn img_set_pixel(img: ImgImage, x: Int, y: Int, rgba: Int) -> ImgImage {
+    if img.valid == false { return img; }
+    if x < 0 || x >= img.width { return img; }
+    if y < 0 || y >= img.height { return img; }
+    let at: Int = y * img.width + x;
+    if at >= list_len(img.pixels) { return img; }
+    let mut out: ImgImage = img;
+    out.pixels = list_set(img.pixels, at, rgba);
+    return out;
+}
+
+pub fn img_verify(img: ImgImage) -> Bool {
+    if img.valid == false { return false; }
+    if img.width <= 0 || img.height <= 0 { return false; }
+    if img.width > IMG_MAX_DIM || img.height > IMG_MAX_DIM { return false; }
+    if list_len(img.pixels) != img.width * img.height { return false; }
+    return true;
+}
+
+pub fn img_digit(c: String) -> Int {
+    if c == "0" { return 0; }
+    if c == "1" { return 1; }
+    if c == "2" { return 2; }
+    if c == "3" { return 3; }
+    if c == "4" { return 4; }
+    if c == "5" { return 5; }
+    if c == "6" { return 6; }
+    if c == "7" { return 7; }
+    if c == "8" { return 8; }
+    if c == "9" { return 9; }
+    return 0 - 1;
+}

@@ -1,0 +1,99 @@
+// # ooda-terminal Shell Command Boundary Markers
+//
+// Logline: Record the prompt and command boundaries of a shell transcript against the screen rows they occupy.
+// Setup: Declared capability: None. Pure list arithmetic over the Mark value type; no ambient authority.
+// Beats:
+//   1. Open a boundary marker for a prompt or a command at the row it starts on.
+//   2. Close the open marker of a kind with the row it ends on and the exit status of the command.
+//   3. Read back a marker, find the open one of a kind, count the markers, and verify the bookkeeping.
+
+pub const MARK_PROMPT: Int = 1;
+pub const MARK_COMMAND: Int = 2;
+pub const MARKS_MAX: Int = 4096;
+
+pub type Mark = struct {
+    kind: Int,
+    start_row: Int,
+    end_row: Int,
+    exit_code: Int,
+    valid: Bool
+};
+
+pub type Marks = struct {
+    marks: List[Mark],
+    count: Int,
+    limit: Int,
+    valid: Bool
+};
+
+pub fn mark_new(kind: Int, row: Int) -> Mark {
+    if kind != MARK_PROMPT && kind != MARK_COMMAND {
+        return Mark { kind: 0, start_row: 0, end_row: 0 - 1, exit_code: 0 - 1, valid: false };
+    }
+    if row < 0 { return Mark { kind: 0, start_row: 0, end_row: 0 - 1, exit_code: 0 - 1, valid: false }; }
+    return Mark { kind: kind, start_row: row, end_row: 0 - 1, exit_code: 0 - 1, valid: true };
+}
+
+pub fn marks_new(limit: Int) -> Marks {
+    let mut lim: Int = limit;
+    if lim < 0 { lim = 0; }
+    if lim > MARKS_MAX { lim = MARKS_MAX; }
+    return Marks { marks: list_new(), count: 0, limit: lim, valid: true };
+}
+
+pub fn marks_add(m: Marks, mark: Mark) -> Marks {
+    if m.valid == false { return m; }
+    if mark.valid == false { return m; }
+    if m.count >= m.limit { return m; }
+    let mut out: Marks = m;
+    out.marks = list_push(m.marks, mark);
+    out.count = m.count + 1;
+    return out;
+}
+
+pub fn marks_open(m: Marks, kind: Int) -> Int {
+    if m.valid == false { return 0 - 1; }
+    let mut i: Int = m.count - 1;
+    while i >= 0 {
+        let mk: Mark = list_get(m.marks, i);
+        if mk.kind == kind && mk.end_row < 0 { return i; }
+        i = i - 1;
+    }
+    return 0 - 1;
+}
+
+pub fn marks_close(m: Marks, kind: Int, row: Int, exit_code: Int) -> Marks {
+    let idx: Int = marks_open(m, kind);
+    if idx < 0 { return m; }
+    if row < 0 { return m; }
+    let mk: Mark = list_get(m.marks, idx);
+    let closed: Mark = Mark {
+        kind: mk.kind,
+        start_row: mk.start_row,
+        end_row: row,
+        exit_code: exit_code,
+        valid: true
+    };
+    let mut out: Marks = m;
+    out.marks = list_set(m.marks, idx, closed);
+    return out;
+}
+
+pub fn marks_at(m: Marks, idx: Int) -> Mark {
+    if m.valid == false { return Mark { kind: 0, start_row: 0, end_row: 0 - 1, exit_code: 0 - 1, valid: false }; }
+    if idx < 0 || idx >= m.count { return Mark { kind: 0, start_row: 0, end_row: 0 - 1, exit_code: 0 - 1, valid: false }; }
+    return list_get(m.marks, idx);
+}
+
+pub fn marks_count(m: Marks) -> Int {
+    if m.valid == false { return 0; }
+    return m.count;
+}
+
+pub fn marks_verify(m: Marks) -> Bool {
+    if m.valid == false { return false; }
+    if m.count < 0 || m.count > m.limit { return false; }
+    if m.limit < 0 || m.limit > MARKS_MAX { return false; }
+    if list_len(m.marks) != m.count { return false; }
+    return true;
+}

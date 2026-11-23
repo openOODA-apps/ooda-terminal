@@ -1,21 +1,30 @@
-// # ooda-console Refusal Test Suite
-//
-// Logline: Assert that the console refuses a rejected child, a traversal path, an unknown theme, and a key.
-//
-// Setup: Imports the console core pages and the standard engine; every refusal fails closed.
-//
+// # ooda-terminal Refusal Test Suite
+// Logline: Assert the terminal refuses rejected children, traversal paths, unknown themes, and bad inputs.
+// Setup: Imports the terminal core and feature pages and the standard engine; every refusal fails closed.
 // Beats:
 //   1. Refuse a program that is empty, relative with a parent segment, or carries a shell metacharacter.
 //   2. Refuse a configuration path that escapes the configuration root.
 //   3. Refuse an unknown theme and an unmapped key event.
+//   4. Refuse a malformed graphic, an out of order mark, and an illegal split.
 
-import "core/session.oo";
+import "core/replay.oo";
 import "core/pty.oo";
 import "core/rows.oo";
 import "core/surface.oo";
 import "core/config.oo";
+import "core/gfx/image.oo";
+import "core/gfx/place.oo";
+import "core/gfx/kitty.oo";
+import "core/gfx/sixel.oo";
+import "core/marks/marks.oo";
+import "core/marks/prompt.oo";
+import "core/marks/status.oo";
+import "core/tabs/tab.oo";
+import "core/tabs/split.oo";
+import "core/tabs/set.oo";
 import "ooda-standard/core/app/ui/term/anchor.oo";
 import "ooda-standard/core/app/ui/ootheme.oo";
+import "ooda-standard/core/encoding/base64_grp/base64.oo";
 
 fn t_ok(cond: Bool, label: String) -> Int {
     if cond {
@@ -28,20 +37,20 @@ fn t_ok(cond: Bool, label: String) -> Int {
 
 fn t_refuse_prog() -> Int {
     let mut n: Int = 0;
-    n = n + t_ok(console_pty_prog_safe("") == false, "an empty program is refused");
-    n = n + t_ok(console_pty_prog_safe("../evil") == false, "a parent-directory program is refused");
-    n = n + t_ok(console_pty_prog_safe("a;rm") == false, "a shell metacharacter in the program is refused");
-    n = n + t_ok(console_pty_prog_safe("-flag") == false, "a program that looks like a flag is refused");
-    n = n + t_ok(console_pty_prog_safe("bin/emit_vt"), "a plain program path is accepted");
+    n = n + t_ok(terminal_pty_prog_safe("") == false, "an empty program is refused");
+    n = n + t_ok(terminal_pty_prog_safe("../evil") == false, "a parent-directory program is refused");
+    n = n + t_ok(terminal_pty_prog_safe("a;rm") == false, "a shell metacharacter in the program is refused");
+    n = n + t_ok(terminal_pty_prog_safe("-flag") == false, "a program that looks like a flag is refused");
+    n = n + t_ok(terminal_pty_prog_safe("bin/emit_vt"), "a plain program path is accepted");
     return n;
 }
 
 fn t_refuse_config(fs_r: &FsReadCap) -> Int {
     let mut n: Int = 0;
-    n = n + t_ok(console_config_path_safe("../etc/passwd") == false, "a parent-directory path is refused");
-    n = n + t_ok(console_config_path_safe("a/../../b") == false, "an embedded parent segment is refused");
-    n = n + t_ok(console_config_path_safe("") == false, "an empty path is refused");
-    let cfg: ConsoleConfig = console_config_load(fs_r, "../etc/passwd");
+    n = n + t_ok(terminal_config_path_safe("../etc/passwd") == false, "a parent-directory path is refused");
+    n = n + t_ok(terminal_config_path_safe("a/../../b") == false, "an embedded parent segment is refused");
+    n = n + t_ok(terminal_config_path_safe("") == false, "an empty path is refused");
+    let cfg: TerminalConfig = terminal_config_load(fs_r, "../etc/passwd");
     n = n + t_ok(cfg.loaded == false && cfg.theme == "ooda-dark",
             "a refused path falls back to the defaults and loads nothing");
     return n;
@@ -50,12 +59,41 @@ fn t_refuse_config(fs_r: &FsReadCap) -> Int {
 fn t_refuse_engine() -> Int {
     let mut n: Int = 0;
     n = n + t_ok(ootheme_known("no-such-theme") == false, "an unknown theme is refused");
-    n = n + t_ok(console_key_bytes("f13", "") == "", "an unmapped key event is refused");
-    n = n + t_ok(console_key_bytes("", "") == "", "an empty key event is refused");
-    let s: ConsoleSession = console_session_new(0, 0);
-    n = n + t_ok(console_session_verify(s), "a session falls back to the default geometry");
-    let rows: List[ConsoleRow] = console_rows_build(console_session_grid(s));
+    n = n + t_ok(terminal_key_bytes("f13", "") == "", "an unmapped key event is refused");
+    n = n + t_ok(terminal_key_bytes("", "") == "", "an empty key event is refused");
+    let s: TerminalReplay = terminal_replay_new(0, 0);
+    n = n + t_ok(terminal_replay_verify(s), "a session falls back to the default geometry");
+    let rows: List[TerminalRow] = terminal_rows_build(terminal_replay_grid(s));
     n = n + t_ok(list_len(rows) == 24, "the fallback geometry holds twenty four rows");
+    return n;
+}
+
+fn t_refuse_features() -> Int {
+    let mut n: Int = 0;
+    n = n + t_ok(kitty_format("f=PNG") == IMG_FMT_FILE && img_verify(kitty_decode("AAAA", IMG_FMT_FILE, 1, 1)) == false,
+            "a kitty file format is refused");
+    let short: String = base64_encode("abc");
+    n = n + t_ok(img_verify(kitty_decode(short, IMG_FMT_RGB24, 2, 2)) == false,
+            "a kitty payload that does not match its size is refused");
+    n = n + t_ok(sixel_color_spec("2;999;0;0") == 0 - 1 && sixel_color_spec("1;0;0;0") == 0 - 1,
+            "a sixel colour outside the byte range or the colour form is refused");
+    let grid: TermGrid = screen_grid(screen_new(10, 4));
+    let escaped: TermGrid = img_place(grid, img_placement_new(7, 9, 0, 5, 1));
+    n = n + t_ok(img_placement_new(0, 0, 0, 2, 2).valid == false && grid_get(escaped, 0, 9).link == 0,
+            "a placement that escapes the grid is refused");
+    n = n + t_ok(prompt_apply(prompt_new(), MARK_C).phase == PROMPT_IDLE,
+            "an out of order OSC 133 mark is refused");
+    n = n + t_ok(status_exit_code("D;x") == 0 - 1 && status_exit_code("Z;0") == 0 - 1,
+            "a malformed exit status is refused");
+    n = n + t_ok(mark_new(99, 0).valid == false, "a boundary marker of an unknown kind is refused");
+    let set: TabSet = tab_set_new(80, 24);
+    n = n + t_ok(split_tree_count(tab_set_split(set, 99, 50).tree) == 1,
+            "a split with an unknown direction is refused");
+    n = n + t_ok(split_tree_count(tab_set_split(set, SPLIT_V, 5).tree) == 1,
+            "a split ratio outside the bounds is refused");
+    n = n + t_ok(split_tree_count(tab_set_close(set).tree) == 1,
+            "closing the only tab of a tab set is refused");
+    n = n + t_ok(tab_verify(tab_new(0, 80, 24)) == false, "a tab with a bad identity is refused");
     return n;
 }
 
@@ -65,10 +103,11 @@ pub fn main(proc: &ProcessCap, fs_r: &FsReadCap, fs_w: &FsWriteCap, env: &EnvCap
     passed = passed + t_refuse_prog();
     passed = passed + t_refuse_config(fs_r);
     passed = passed + t_refuse_engine();
-    if passed != 14 {
-        println("FAIL: " + passed.to_string() + "/14 console refusal assertions");
+    passed = passed + t_refuse_features();
+    if passed != 25 {
+        println("FAIL: " + passed.to_string() + "/25 terminal refusal assertions");
         return Err("assertions");
     }
-    println("PASS: 14/14 console refusal assertions");
+    println("PASS: 25/25 terminal refusal assertions");
     return Ok(0);
 }

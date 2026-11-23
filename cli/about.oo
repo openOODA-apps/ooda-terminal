@@ -1,6 +1,6 @@
-// # ooda-console About Card
+// # ooda-terminal About Card
 //
-// Logline: Print the canonical about card or the JSON descriptor for the ooda-console binary.
+// Logline: Print the canonical about card or the JSON descriptor for the ooda-terminal binary.
 //
 // Setup: Imports json_writer.oo for escaping and ootheme.oo for the palette; every unknown flag or target fails closed.
 //
@@ -12,59 +12,58 @@
 import "ooda-standard/core/format/json_writer.oo";
 import "ooda-standard/core/app/ui/ootheme.oo";
 import "cli/cli.oo";
-import "cli/theme.oo";
 
-pub fn ooconsole_about_subs() -> String {
+pub fn ooterm_about_subs() -> String {
     return "run,pty-run,gui,theme,inspect,status,verify,about";
 }
 
-pub fn ooconsole_about_caps() -> String {
+pub fn ooterm_about_caps() -> String {
     return "FsRead,FsWrite,Fs,Process,Env,Ffi";
 }
 
-pub fn ooconsole_about_summary() -> String {
-    return "apps-layer GUI terminal front end that runs a child in a PTY and renders its VT500 output"
-        + " through the shared ooda-standard terminal engine";
+pub fn ooterm_about_summary() -> String {
+    return "apps-layer terminal that turns a program byte stream into a character grid: a windowed front end, a headless "
+        + "replay verb, a live child verb, graphics, OSC 133 shell integration, tabs and splits, and configuration";
 }
 
-pub fn ooconsole_about_sub_known(s: String) -> Bool {
+pub fn ooterm_about_sub_known(s: String) -> Bool {
     if s == "run" || s == "pty-run" || s == "gui" || s == "theme" { return true; }
     return s == "inspect" || s == "status" || s == "verify" || s == "about";
 }
 
-pub fn ooconsole_about_card(tname: String, style: String, hit: String) -> String {
-    let l1: String = "Binary       : ooda-console (v0.1.0)";
-    let l2: String = "Organization : openOODA-apps (https://github.com/openOODA-apps/ooda-console)";
-    let l3: String = "Summary      : " + ooconsole_about_summary();
-    let l4: String = "Subcommands  : " + ooconsole_about_subs();
-    let l5: String = "Capabilities : " + ooconsole_about_caps();
+pub fn ooterm_about_card(tname: String, style: String, hit: String) -> String {
+    let l1: String = "Binary       : ooda-terminal (v1.0.0)";
+    let l2: String = "Organization : openOODA-apps (https://github.com/openOODA-apps/ooda-terminal)";
+    let l3: String = "Summary      : " + ooterm_about_summary();
+    let l4: String = "Subcommands  : " + ooterm_about_subs();
+    let l5: String = "Capabilities : " + ooterm_about_caps();
     let l6: String = "Theme        : " + tname + " | style: " + style;
     if hit == "" {
         return l1 + "\n" + l2 + "\n" + l3 + "\n" + l4 + "\n" + l5 + "\n" + l6;
     }
-    let l0: String = "Subcommand   : " + hit + " -> run `ooda-console " + hit + " [args...]`";
+    let l0: String = "Subcommand   : " + hit + " -> run `ooda-terminal " + hit + " [args...]`";
     return l1 + "\n" + l2 + "\n" + l0 + "\n" + l3 + "\n" + l4 + "\n" + l5 + "\n" + l6;
 }
 
-pub fn ooconsole_about_json(tname: String, hit: String) -> String {
+pub fn ooterm_about_json(tname: String, hit: String) -> String {
     let sub: String = if hit == "" { "" } else { ",\"subcommand\":\"" + json_escape_str(hit) + "\"" };
-    return "{\"component\":\"ooda-console\",\"version\":\"0.1.0\"" +
+    return "{\"component\":\"ooda-terminal\",\"version\":\"1.0.0\"" +
         ",\"layer\":\"apps\",\"organization\":\"openOODA-apps\"" + sub +
-        ",\"summary\":\"" + json_escape_str(ooconsole_about_summary()) + "\"" +
-        ",\"subcommands\":\"" + ooconsole_about_subs() + "\"" +
-        ",\"capabilities\":\"" + ooconsole_about_caps() + "\"" +
+        ",\"summary\":\"" + json_escape_str(ooterm_about_summary()) + "\"" +
+        ",\"subcommands\":\"" + ooterm_about_subs() + "\"" +
+        ",\"capabilities\":\"" + ooterm_about_caps() + "\"" +
         ",\"theme\":\"" + json_escape_str(tname) + "\"}";
 }
 
-fn ooconsole_about_refusal(target: String, reason: String) -> String {
-    return "{\"component\":\"ooda-console\",\"version\":\"0.1.0\",\"command\":\"about\"" +
+fn ooterm_about_refusal(target: String, reason: String) -> String {
+    return "{\"component\":\"ooda-terminal\",\"version\":\"1.0.0\",\"command\":\"about\"" +
         ",\"target\":\"" + json_escape_str(target) + "\",\"pass\":false" +
         ",\"error\":\"" + json_escape_str(reason) + "\"}";
 }
 
-pub fn ooconsole_about_run(env: &EnvCap, args: List[String]) -> Int {
+pub fn ooterm_about_run(env: &EnvCap, args: List[String]) -> Int {
     let mut hit: String = "";
-    let json: Bool = ooconsole_cli_has(args, "--json");
+    let json: Bool = ooterm_cli_has(args, "--json");
     let mut i: Int = 0;
     while i < list_len(args) {
         let a: String = list_get(args, i);
@@ -73,28 +72,28 @@ pub fn ooconsole_about_run(env: &EnvCap, args: List[String]) -> Int {
             continue;
         }
         if str_starts_with(a, "-") {
-            if json { println(ooconsole_about_refusal(a, "unknown flag")); }
-            else { println("ooda-console: about: unknown flag: " + a); }
+            if json { println(ooterm_about_refusal(a, "unknown flag")); }
+            else { println("ooda-terminal: about: unknown flag: " + a); }
             return 2;
         }
         if chars_len(hit) > 0 {
-            if json { println(ooconsole_about_refusal(a, "unexpected argument")); }
-            else { println("ooda-console: about: unexpected argument: " + a); }
+            if json { println(ooterm_about_refusal(a, "unexpected argument")); }
+            else { println("ooda-terminal: about: unexpected argument: " + a); }
             return 2;
         }
         hit = a;
         i = i + 1;
     }
-    if chars_len(hit) > 0 && ooconsole_about_sub_known(hit) == false {
-        if json { println(ooconsole_about_refusal(hit, "unknown target")); }
-        else { println("ooda-console: about: unknown target: " + hit); }
+    if chars_len(hit) > 0 && ooterm_about_sub_known(hit) == false {
+        if json { println(ooterm_about_refusal(hit, "unknown target")); }
+        else { println("ooda-terminal: about: unknown target: " + hit); }
         return 2;
     }
-    let pal: OoThemePalette = ooconsole_theme_resolve(env, "ooda-dark");
+    let pal: OoThemePalette = ooterm_theme_resolve(env, "ooda-dark");
     if json {
-        println(ooconsole_about_json(pal.name, hit));
+        println(ooterm_about_json(pal.name, hit));
         return 0;
     }
-    println(ooconsole_about_card(pal.name, ooconsole_glyph_style(pal), hit));
+    println(ooterm_about_card(pal.name, ooterm_glyph_style(pal), hit));
     return 0;
 }

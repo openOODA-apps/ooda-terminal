@@ -1,0 +1,88 @@
+// # ooda-terminal Shell Integrated Screen State
+//
+// Logline: Bind the terminal screen to the shell prompt state, the boundary markers, and the exit status.
+// Setup: Declared capability: None. Pure value arithmetic over the screen and the mark pages; no ambient authority.
+// Beats:
+//   1. Build a shell integrated state from a screen and the prompt, marker, and status pages.
+//   2. Apply one parsed token: text and control sequences go to the screen, OSC 133 marks to the shell state.
+//   3. Refuse an out of order or malformed mark, leaving the screen and the shell state untouched.
+
+import "ooda-standard/core/app/ui/term/anchor.oo";
+import "core/marks/prompt.oo";
+import "core/marks/marks.oo";
+import "core/marks/status.oo";
+
+pub type MarkState = struct {
+    screen: TermScreen,
+    prompt: Prompt,
+    marks: Marks,
+    status: Status,
+    valid: Bool
+};
+
+pub fn mark_state_new(cols: Int, rows: Int) -> MarkState {
+    return MarkState {
+        screen: screen_new(cols, rows),
+        prompt: prompt_new(),
+        marks: marks_new(1024),
+        status: status_new(),
+        valid: true
+    };
+}
+
+fn mark_state_apply_osc(st: MarkState, t: VtToken) -> MarkState {
+    let mut out: MarkState = st;
+    if list_len(t.params) < 1 { return out; }
+    if list_get(t.params, 0) != PROMPT_OSC_ID { return out; }
+    let kind: Int = prompt_kind(t.str);
+    if kind == 0 { return out; }
+    let next: Prompt = prompt_apply(st.prompt, kind);
+    if next.phase == st.prompt.phase && next.prompts == st.prompt.prompts
+            && next.commands == st.prompt.commands { return out; }
+    let row: Int = screen_cursor(st.screen).row;
+    if kind == MARK_A {
+        out.prompt = next;
+        out.marks = marks_add(st.marks, mark_new(MARK_PROMPT, row));
+        out.status = status_prompt(st.status);
+        return out;
+    }
+    if kind == MARK_B {
+        out.prompt = next;
+        out.marks = marks_close(st.marks, MARK_PROMPT, row, 0 - 1);
+        return out;
+    }
+    if kind == MARK_C {
+        out.prompt = next;
+        out.marks = marks_add(st.marks, mark_new(MARK_COMMAND, row));
+        out.status = status_command(st.status);
+        return out;
+    }
+    let code: Int = status_exit_code(t.str);
+    if code < 0 { return out; }
+    out.prompt = next;
+    out.marks = marks_close(st.marks, MARK_COMMAND, row, code);
+    out.status = status_finish(st.status, code);
+    return out;
+}
+
+pub fn mark_state_apply(st: MarkState, t: VtToken) -> MarkState {
+    let mut out: MarkState = st;
+    if st.valid == false { return st; }
+    if t.valid == false { return st; }
+    if t.kind == VTK_OSC { return mark_state_apply_osc(out, t); }
+    out.screen = term_apply_token(out.screen, t);
+    return out;
+}
+
+pub fn mark_state_last_exit(st: MarkState) -> Int {
+    if st.valid == false { return 0 - 1; }
+    return status_last_exit(st.status);
+}
+
+pub fn mark_state_verify(st: MarkState) -> Bool {
+    if st.valid == false { return false; }
+    if !screen_verify(st.screen) { return false; }
+    if !prompt_verify(st.prompt) { return false; }
+    if !marks_verify(st.marks) { return false; }
+    return status_verify(st.status);
+}

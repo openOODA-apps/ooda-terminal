@@ -1,13 +1,13 @@
-// # ooda-console Canonical CLI Entrypoint
+// # ooda-terminal Canonical CLI Entrypoint
 //
-// Logline: CLI driver, subsystem self-test, and JSON status reporter for the console.
+// Logline: CLI driver, subsystem self-test, and JSON status reporter for the terminal.
 //
 // Setup: Zero ambient authority entrypoint accepting status, verify, inspect, --json, --help, --version, and --self-test.
 //
 // Beats:
 //   1. Parse the CLI arguments into a mode via the cli helpers. The --json and --self-test arguments are flags honoured
 //     in any order.
-//   2. Run the engine, row, key, and config self-test.
+//   2. Run the engine, row, key, config, graphics, marks, and tabs self-test.
 //   3. Emit deterministic human or JSON verification results.
 
 import "anchor.oo";
@@ -15,99 +15,107 @@ import "cli/about.oo";
 import "cli/cli.oo";
 import "cli/gui.oo";
 import "cli/run.oo";
-import "cli/theme.oo";
-import "core/session.oo";
+import "core/replay.oo";
 import "core/rows.oo";
 import "core/surface.oo";
-import "core/config.oo";
+import "core/gfx/image.oo";
+import "core/gfx/kitty.oo";
+import "core/marks/marks.oo";
+import "core/marks/prompt.oo";
+import "core/tabs/set.oo";
 import "ooda-standard/core/app/ui/ootheme.oo";
 import "ooda-standard/core/primitives/byte/byte.oo";
 
-fn ooconsole_selftest() -> Bool {
-    let mut s: ConsoleSession = console_session_new(20, 4);
-    s = console_session_feed(s, "ok");
-    if console_session_verify(s) == false { return false; }
+fn ooterm_selftest() -> Bool {
+    let mut s: TerminalReplay = terminal_replay_new(20, 4);
+    s = terminal_replay_feed(s, "ok");
+    if terminal_replay_verify(s) == false { return false; }
     if s.frames != 1 || s.bytes_in != 2 { return false; }
-    if console_session_text(s) != "ok" { return false; }
-    let g: TermGrid = console_session_grid(s);
+    if terminal_replay_text(s) != "ok" { return false; }
+    let g: TermGrid = terminal_replay_grid(s);
     let cell: TermCell = grid_get(g, 0, 0);
     if cell.codepoint != 111 { return false; }
-    let rows: List[ConsoleRow] = console_rows_build(g);
+    let rows: List[TerminalRow] = terminal_rows_build(g);
     if list_len(rows) != 4 { return false; }
-    if console_row_text(list_get(rows, 0)) != "ok" { return false; }
-    if console_runs_count(rows) != 1 { return false; }
-    if console_key_bytes("enter", "") != byte_chr(13) { return false; }
-    if console_key_bytes("", "a") != "a" { return false; }
-    if console_key_bytes("", "") != "" { return false; }
+    if terminal_row_text(list_get(rows, 0)) != "ok" { return false; }
+    if terminal_runs_count(rows) != 1 { return false; }
+    if terminal_key_bytes("enter", "") != byte_chr(13) { return false; }
+    if terminal_key_bytes("", "a") != "a" { return false; }
+    if terminal_key_bytes("", "") != "" { return false; }
     let pal: OoThemePalette = ootheme_resolve("ooda-dark");
     if ootheme_verify(pal) == false { return false; }
     if ootheme_known("bogus-theme") { return false; }
+    if img_verify(img_image_new(1, 2, 2)) == false { return false; }
+    if kitty_action(kitty_control("Ga=T,f=24,s=1,v=1;AAAA")) != KITTY_ACTION_TRANSMIT { return false; }
+    if marks_verify(marks_new(8)) == false { return false; }
+    if prompt_verify(prompt_new()) == false { return false; }
+    if tab_set_verify(tab_set_new(80, 24)) == false { return false; }
     return true;
 }
 
-fn ooconsole_report(args: List[String], mode: String, name: String, ver: String) -> Result[Int, String] {
+fn ooterm_report(args: List[String], mode: String, name: String, ver: String) -> Result[Int, String] {
     if mode == "inspect" {
-        let s: ConsoleSession = console_session_feed(console_session_new(20, 4), "ok");
-        let g: TermGrid = console_session_grid(s);
-        println(ooconsole_cli_json(name, ver, "apps", "UI", list_len(console_rows_build(g)), "pass"));
-        println(console_session_text(s));
+        let s: TerminalReplay = terminal_replay_feed(terminal_replay_new(20, 4), "ok");
+        let g: TermGrid = terminal_replay_grid(s);
+        println(ooterm_cli_json(name, ver, "apps", "UI", list_len(terminal_rows_build(g)), "pass"));
+        println(terminal_replay_text(s));
         return Ok(0);
     }
-    if ooconsole_cli_has(args, "--json") {
-        println(ooconsole_cli_json(name, ver, "apps", "UI", 0, "pass"));
+    if ooterm_cli_has(args, "--json") {
+        println(ooterm_cli_json(name, ver, "apps", "UI", 0, "pass"));
         return Ok(0);
     }
     if mode == "verify" {
-        println(name + " " + ver + ": verify OK (engine+rows+keys+theme)");
+        println(name + " " + ver + ": verify OK (engine+rows+keys+theme+graphics+marks+tabs)");
         return Ok(0);
     }
     if mode == "self-test" {
         println(name + " " + ver + ": PASS (self-test)");
         return Ok(0);
     }
-    println(name + " " + ver + ": PASS (apps-layer GUI terminal front end on the shared ooda-standard terminal engine)");
+    println(name + " " + ver + ": PASS (apps-layer terminal on the shared ooda-standard terminal engine)");
     return Ok(0);
 }
 
 pub fn main(fs_r: &FsReadCap, fs_w: &FsWriteCap, fs: &FsCap, env: &EnvCap, proc: &ProcessCap,
         ffi: &FfiCap, args: List[String]) -> Result[Int, String] {
-    let name: String = ooconsole_component_name();
-    let ver: String = ooconsole_version();
-    let mode: String = ooconsole_cli_mode(args);
+    let name: String = ooterm_component_name();
+    let ver: String = ooterm_version();
+    let mode: String = ooterm_cli_mode(args);
     if mode == "unknown" || mode == "conflict" {
         println("ERR " + name + ": " + mode + " argument");
         return Ok(2);
     }
     if mode == "help" {
-        ooconsole_cli_print_help(name, ver, ooconsole_about_summary());
+        ooterm_cli_print_help(name, ver, ooterm_about_summary());
         return Ok(0);
     }
     if mode == "version" {
         println(name + " " + ver);
         return Ok(0);
     }
-    if mode == "about" { return Ok(ooconsole_about_run(env, args)); }
-    if ooconsole_selftest() == false {
+    if mode == "about" { return Ok(ooterm_about_run(env, args)); }
+    if ooterm_selftest() == false {
         println("FAIL: " + name + " self-test failed");
         return Ok(1);
     }
-    if mode == "run" { return ooconsole_run_replay(fs_r, env, args, name, ver); }
-    if mode == "pty-run" { return ooconsole_pty_run(proc, fs_r, env, args, name, ver); }
-    if mode == "gui" { return ooconsole_gui_run(fs_r, fs_w, fs, env, proc, ffi, args, name); }
+    if mode == "run" { return ooterm_run_replay(fs_r, env, args, name, ver); }
+    if mode == "pty-run" { return ooterm_pty_run(proc, fs_r, env, args, name, ver); }
+    if mode == "gui" { return ooterm_gui_run(fs_r, fs_w, fs, env, proc, ffi, args, name); }
     if mode == "theme" {
-        let op: String = ooconsole_cli_operand(args);
+        let op: String = ooterm_cli_operand(args);
         let tname: String = if op == "" { "ooda-dark" } else { op };
         if ootheme_known(tname) == false {
             println("ERR " + name + ": unknown theme " + tname);
             return Ok(2);
         }
         let pal: OoThemePalette = ootheme_resolve(tname);
-        if ooconsole_cli_has(args, "--json") {
+        if ooterm_cli_has(args, "--json") {
             println(ootheme_json(pal));
             return Ok(0);
         }
         println(ootheme_tui_frame(pal, name, ver, "apps", "PASS"));
         return Ok(0);
     }
-    return ooconsole_report(args, mode, name, ver);
+    return ooterm_report(args, mode, name, ver);
 }

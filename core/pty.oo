@@ -1,4 +1,4 @@
-// # ooda-console PTY Child
+// # ooda-terminal PTY Child
 //
 // Logline: Spawn a child in a PTY, drain its bytes, forward keystrokes, and reap it, through the capability-gated host
 //   page that ooda-standard owns.
@@ -13,7 +13,7 @@ import "ooda-standard/fs/os/host_grp/host_pty.oo";
 import "ooda-standard/sec/kev_grp/kev_guard.oo";
 import "ooda-standard/fs/file/fs_grp/fs_invariants.oo";
 
-pub type ConsolePty = struct {
+pub type TerminalPty = struct {
     handle: Int,
     cols: Int,
     rows: Int,
@@ -21,50 +21,50 @@ pub type ConsolePty = struct {
     err: String
 };
 
-fn console_pty_fail(msg: String) -> ConsolePty {
-    return ConsolePty { handle: 0 - 1, cols: 0, rows: 0, valid: false, err: msg };
+fn terminal_pty_fail(msg: String) -> TerminalPty {
+    return TerminalPty { handle: 0 - 1, cols: 0, rows: 0, valid: false, err: msg };
 }
 
-pub fn console_pty_prog_safe(prog: String) -> Bool {
+pub fn terminal_pty_prog_safe(prog: String) -> Bool {
     if chars_len(prog) == 0 || !oo_kev_arg_safe(prog) { return false; }
     if fs_is_dotdot_traversal(prog) != 0 { return false; }
     if str_starts_with(prog, "-") { return false; }
     return !str_contains(prog, ";") && !str_contains(prog, "|") && !str_contains(prog, "&");
 }
 
-pub fn console_pty_open(proc: &ProcessCap, prog: String, argv: List[String], rows: Int,
-        cols: Int) -> ConsolePty {
-    if console_pty_prog_safe(prog) == false { return console_pty_fail("prog refused"); }
+pub fn terminal_pty_open(proc: &ProcessCap, prog: String, argv: List[String], rows: Int,
+        cols: Int) -> TerminalPty {
+    if terminal_pty_prog_safe(prog) == false { return terminal_pty_fail("prog refused"); }
     let op: Result[Int, String] = oo_host_pty_open(proc, rows, cols);
-    if op.is_err() { return console_pty_fail("pty open refused"); }
+    if op.is_err() { return terminal_pty_fail("pty open refused"); }
     let h: Int = match op { Ok(v) => v, Err(_) => 0 - 1 };
     let rsz: Result[Int, String] = oo_host_pty_resize(proc, h, rows, cols);
     if rsz.is_err() {
         let _cl0: Result[Int, String] = oo_host_pty_close(proc, h);
-        return console_pty_fail("pty resize refused");
+        return terminal_pty_fail("pty resize refused");
     }
     let sp: Result[Int, String] = oo_host_pty_spawn(proc, h, prog, argv);
     if sp.is_err() {
         let _cl1: Result[Int, String] = oo_host_pty_close(proc, h);
-        return console_pty_fail("pty spawn refused");
+        return terminal_pty_fail("pty spawn refused");
     }
-    return ConsolePty { handle: h, cols: cols, rows: rows, valid: true, err: "" };
+    return TerminalPty { handle: h, cols: cols, rows: rows, valid: true, err: "" };
 }
 
-pub fn console_pty_read(proc: &ProcessCap, p: ConsolePty, timeout_ms: Int) -> String {
+pub fn terminal_pty_read(proc: &ProcessCap, p: TerminalPty, timeout_ms: Int) -> String {
     if p.valid == false { return ""; }
     let rd: Result[String, String] = oo_host_pty_read(proc, p.handle, timeout_ms);
     if rd.is_err() { return ""; }
     return rd.unwrap();
 }
 
-pub fn console_pty_write(proc: &ProcessCap, p: ConsolePty, data: String) -> Bool {
+pub fn terminal_pty_write(proc: &ProcessCap, p: TerminalPty, data: String) -> Bool {
     if p.valid == false { return false; }
     let wr: Result[Int, String] = oo_host_pty_write(proc, p.handle, data);
     return !wr.is_err();
 }
 
-pub fn console_pty_close(proc: &ProcessCap, p: ConsolePty) -> Int {
+pub fn terminal_pty_close(proc: &ProcessCap, p: TerminalPty) -> Int {
     if p.valid == false { return 0 - 1; }
     let cl: Result[Int, String] = oo_host_pty_close(proc, p.handle);
     if cl.is_err() { return 0 - 1; }

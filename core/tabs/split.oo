@@ -1,0 +1,160 @@
+// # ooda-terminal Split Tree
+//
+// Logline: A binary tree of split nodes whose leaves hold tabs, with a bounded node count.
+// Setup: Declared capability: None. Pure list arithmetic over the tab pages; no ambient authority.
+// Beats:
+//   1. Build a tree with one leaf, and split a leaf into a branch that keeps both halves.
+//   2. Close a leaf by collapsing its parent and marking the leaf dead, without moving any node.
+//   3. Read a node, count the nodes, and verify the tree.
+
+pub const SPLIT_LEAF: Int = 0;
+pub const SPLIT_H: Int = 1;
+pub const SPLIT_V: Int = 2;
+pub const SPLIT_MAX: Int = 64;
+
+pub type SplitNode = struct {
+    kind: Int,
+    dir: Int,
+    first: Int,
+    second: Int,
+    ratio: Int,
+    tab: Int,
+    valid: Bool
+};
+
+pub type SplitTree = struct {
+    nodes: List[SplitNode],
+    root: Int,
+    count: Int,
+    valid: Bool
+};
+
+fn split_node_bad() -> SplitNode {
+    return SplitNode { kind: SPLIT_LEAF, dir: 0, first: 0 - 1, second: 0 - 1, ratio: 50, tab: 0, valid: false };
+}
+
+pub fn split_tree_new(tab: Int) -> SplitTree {
+    let leaf: SplitNode = SplitNode {
+        kind: SPLIT_LEAF,
+        dir: 0,
+        first: 0 - 1,
+        second: 0 - 1,
+        ratio: 50,
+        tab: tab,
+        valid: true
+    };
+    return SplitTree { nodes: list_push(list_new(), leaf), root: 0, count: 1, valid: true };
+}
+
+pub fn split_node(t: SplitTree, idx: Int) -> SplitNode {
+    if t.valid == false { return split_node_bad(); }
+    if idx < 0 || idx >= t.count { return split_node_bad(); }
+    return list_get(t.nodes, idx);
+}
+
+pub fn split_tree_split(t: SplitTree, node: Int, dir: Int, ratio: Int, tab: Int) -> SplitTree {
+    if t.valid == false { return t; }
+    if node < 0 || node >= t.count { return t; }
+    if dir != SPLIT_H && dir != SPLIT_V { return t; }
+    if ratio < 10 || ratio > 90 { return t; }
+    if t.count + 2 > SPLIT_MAX { return t; }
+    let old: SplitNode = split_node(t, node);
+    if old.valid == false { return t; }
+    if old.kind != SPLIT_LEAF { return t; }
+    let leaf: SplitNode = SplitNode {
+        kind: SPLIT_LEAF,
+        dir: 0,
+        first: 0 - 1,
+        second: 0 - 1,
+        ratio: 50,
+        tab: tab,
+        valid: true
+    };
+    let branch: SplitNode = SplitNode {
+        kind: dir,
+        dir: dir,
+        first: t.count,
+        second: t.count + 1,
+        ratio: ratio,
+        tab: 0,
+        valid: true
+    };
+    let mut nodes: List[SplitNode] = t.nodes;
+    nodes = list_push(nodes, old);
+    nodes = list_push(nodes, leaf);
+    nodes = list_set(nodes, node, branch);
+    let mut out: SplitTree = t;
+    out.nodes = nodes;
+    out.count = t.count + 2;
+    return out;
+}
+
+fn split_parent_of(t: SplitTree, node: Int) -> Int {
+    let mut i: Int = 0;
+    while i < t.count {
+        let nd: SplitNode = split_node(t, i);
+        if nd.valid == false {
+            i = i + 1;
+            continue;
+        }
+        if nd.kind != SPLIT_LEAF {
+            if nd.first == node { return i; }
+            if nd.second == node { return i; }
+        }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+pub fn split_tree_close(t: SplitTree, node: Int) -> SplitTree {
+    if t.valid == false { return t; }
+    if node < 0 || node >= t.count { return t; }
+    let target: SplitNode = split_node(t, node);
+    if target.valid == false { return t; }
+    if target.kind != SPLIT_LEAF { return t; }
+    if target.tab <= 0 { return t; }
+    let parent: Int = split_parent_of(t, node);
+    if parent < 0 { return t; }
+    let p: SplitNode = split_node(t, parent);
+    let sibling: Int = if p.first == node { p.second } else { p.first };
+    if sibling < 0 || sibling >= t.count { return t; }
+    let sib: SplitNode = split_node(t, sibling);
+    let dead: SplitNode = SplitNode {
+        kind: SPLIT_LEAF,
+        dir: 0,
+        first: 0 - 1,
+        second: 0 - 1,
+        ratio: 50,
+        tab: 0,
+        valid: true
+    };
+    let mut nodes: List[SplitNode] = t.nodes;
+    nodes = list_set(nodes, parent, sib);
+    nodes = list_set(nodes, node, dead);
+    let mut out: SplitTree = t;
+    out.nodes = nodes;
+    return out;
+}
+
+pub fn split_tree_count(t: SplitTree) -> Int {
+    if t.valid == false { return 0; }
+    return t.count;
+}
+
+pub fn split_tree_verify(t: SplitTree) -> Bool {
+    if t.valid == false { return false; }
+    if t.count <= 0 || t.count > SPLIT_MAX { return false; }
+    if t.root < 0 || t.root >= t.count { return false; }
+    if list_len(t.nodes) != t.count { return false; }
+    let mut i: Int = 0;
+    while i < t.count {
+        let nd: SplitNode = list_get(t.nodes, i);
+        if nd.valid == false { return false; }
+        if nd.kind != SPLIT_LEAF {
+            if nd.first < 0 || nd.first >= t.count { return false; }
+            if nd.second < 0 || nd.second >= t.count { return false; }
+        }
+        i = i + 1;
+    }
+    return true;
+}

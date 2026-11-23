@@ -1,20 +1,21 @@
-// # ooda-console Configuration
+// # ooda-terminal Configuration
 //
-// Logline: Read the console configuration under the read capability and resolve the theme, the geometry, and the child
+// Logline: Read the terminal configuration under the read capability and resolve the theme, the geometry, and the child
 //   program, refusing a traversal or a malformed value.
 // Setup: Declared capability: FsRead. The configuration is read through the standard filesystem page; a missing file is
 //   not an error, it falls back to the documented defaults.
 // Beats:
 //   1. Read the configuration file and parse one key=value pair per line.
 //   2. Resolve the theme, the column count, the row count, and the child program, refusing an out-of-range value.
-//   3. Refuse a path that escapes the configuration root and fall back to the defaults when the file is absent.
+//   3. Validate the resolved settings against the schema and reload them, keeping the old values when the new file is
+//      absent, unsafe, or malformed.
 
 import "ooda-standard/fs/os/fs/fs.oo";
 import "ooda-standard/fs/os/fs.oo";
 import "ooda-standard/fs/file/fs_grp/fs_invariants.oo";
 import "ooda-standard/core/app/ui/ootheme.oo";
 
-pub type ConsoleConfig = struct {
+pub type TerminalConfig = struct {
     theme: String,
     cols: Int,
     rows: Int,
@@ -22,22 +23,24 @@ pub type ConsoleConfig = struct {
     loaded: Bool
 };
 
-pub const CONSOLE_DEFAULT_THEME: String = "ooda-dark";
-pub const CONSOLE_DEFAULT_COLS: Int = 80;
-pub const CONSOLE_DEFAULT_ROWS: Int = 24;
+pub const TERMINAL_DEFAULT_THEME: String = "ooda-dark";
+pub const TERMINAL_DEFAULT_COLS: Int = 80;
+pub const TERMINAL_DEFAULT_ROWS: Int = 24;
+pub const TERMINAL_MAX_COLS: Int = 512;
+pub const TERMINAL_MAX_ROWS: Int = 512;
 
-fn console_config_default() -> ConsoleConfig {
-    return ConsoleConfig { theme: CONSOLE_DEFAULT_THEME, cols: CONSOLE_DEFAULT_COLS, rows: CONSOLE_DEFAULT_ROWS,
+fn terminal_config_default() -> TerminalConfig {
+    return TerminalConfig { theme: TERMINAL_DEFAULT_THEME, cols: TERMINAL_DEFAULT_COLS, rows: TERMINAL_DEFAULT_ROWS,
             prog: "", loaded: false };
 }
 
-pub fn console_config_path_safe(path: String) -> Bool {
+pub fn terminal_config_path_safe(path: String) -> Bool {
     if chars_len(path) == 0 { return false; }
     if str_contains(path, "..") { return false; }
     return oo_path_ok(path);
 }
 
-fn console_config_value(body: String, key: String) -> String {
+fn terminal_config_value(body: String, key: String) -> String {
     let lines: List[String] = str_split(body, "\n");
     let mut i: Int = 0;
     while i < list_len(lines) {
@@ -50,7 +53,7 @@ fn console_config_value(body: String, key: String) -> String {
     return "";
 }
 
-fn console_config_count(value: String, fallback: Int) -> Int {
+fn terminal_config_count(value: String, fallback: Int) -> Int {
     if bytes_len(value) == 0 { return fallback; }
     let mut n: Int = 0;
     let mut i: Int = 0;
@@ -58,28 +61,49 @@ fn console_config_count(value: String, fallback: Int) -> Int {
         let b: Int = byte_at(value, i);
         if b < 48 || b > 57 { return fallback; }
         n = n * 10 + (b - 48);
-        if n > 4096 { return fallback; }
+        if n > TERMINAL_MAX_COLS { return fallback; }
         i = i + 1;
     }
     if n <= 0 { return fallback; }
     return n;
 }
 
-pub fn console_config_load(fs_r: &FsReadCap, path: String) -> ConsoleConfig {
-    let mut cfg: ConsoleConfig = console_config_default();
-    if console_config_path_safe(path) == false { return cfg; }
+pub fn terminal_config_load(fs_r: &FsReadCap, path: String) -> TerminalConfig {
+    let mut cfg: TerminalConfig = terminal_config_default();
+    if terminal_config_path_safe(path) == false { return cfg; }
     if fs_path_exists(fs_r, path) == false { return cfg; }
     let rd: Result[String, String] = fs_read_file(fs_r, path);
     if rd.is_err() { return cfg; }
     let body: String = rd.unwrap();
-    let theme: String = console_config_value(body, "theme");
+    let theme: String = terminal_config_value(body, "theme");
     if theme != "" && ootheme_known(theme) { cfg.theme = theme; }
-    let cols: String = console_config_value(body, "cols");
-    if cols != "" { cfg.cols = console_config_count(cols, CONSOLE_DEFAULT_COLS); }
-    let rows: String = console_config_value(body, "rows");
-    if rows != "" { cfg.rows = console_config_count(rows, CONSOLE_DEFAULT_ROWS); }
-    let prog: String = console_config_value(body, "prog");
+    let cols: String = terminal_config_value(body, "cols");
+    if cols != "" { cfg.cols = terminal_config_count(cols, TERMINAL_DEFAULT_COLS); }
+    let rows: String = terminal_config_value(body, "rows");
+    if rows != "" { cfg.rows = terminal_config_count(rows, TERMINAL_DEFAULT_ROWS); }
+    let prog: String = terminal_config_value(body, "prog");
     if prog != "" { cfg.prog = prog; }
     cfg.loaded = true;
     return cfg;
+}
+
+pub fn terminal_config_valid(cfg: TerminalConfig) -> Bool {
+    if cfg.cols <= 0 || cfg.cols > TERMINAL_MAX_COLS { return false; }
+    if cfg.rows <= 0 || cfg.rows > TERMINAL_MAX_ROWS { return false; }
+    if ootheme_known(cfg.theme) == false { return false; }
+    if chars_len(cfg.prog) > 0 {
+        if str_starts_with(cfg.prog, "-") { return false; }
+        if str_contains(cfg.prog, ";") { return false; }
+        if str_contains(cfg.prog, "..") { return false; }
+    }
+    return true;
+}
+
+pub fn terminal_config_reload(fs_r: &FsReadCap, path: String, old: TerminalConfig) -> TerminalConfig {
+    if terminal_config_path_safe(path) == false { return old; }
+    if fs_path_exists(fs_r, path) == false { return old; }
+    let fresh: TerminalConfig = terminal_config_load(fs_r, path);
+    if fresh.loaded == false { return old; }
+    if terminal_config_valid(fresh) == false { return old; }
+    return fresh;
 }

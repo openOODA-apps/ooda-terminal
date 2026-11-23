@@ -1,0 +1,134 @@
+// # ooda-terminal Terminal Tab Set
+//
+// Logline: A tab set owns its split tree, its tabs, the focused leaf, and the settings a reload may change.
+// Setup: Declared capability: None. Pure value arithmetic over the tab, split, and layout pages.
+// Beats:
+//   1. Build a tab set with one tab, and split the focused leaf into a second tab.
+//   2. Close the focused tab and step the focus around the leaves.
+//   3. Read the tab under a node, tile the tab set, and verify the whole tab set.
+
+import "core/tabs/tab.oo";
+import "core/tabs/split.oo";
+import "core/tabs/layout.oo";
+
+pub type TabSet = struct {
+    tree: SplitTree,
+    tabs: List[Tab],
+    focus: Int,
+    next_tab: Int,
+    cols: Int,
+    rows: Int,
+    scrollback_limit: Int,
+    cursor_blink: Bool,
+    valid: Bool
+};
+
+pub fn tab_set_new(cols: Int, rows: Int) -> TabSet {
+    let mut c: Int = cols;
+    let mut r: Int = rows;
+    if c <= 0 { c = 80; }
+    if r <= 0 { r = 24; }
+    let tree: SplitTree = split_tree_new(1);
+    let tabs: List[Tab] = list_push(list_new(), tab_new(1, c, r));
+    return TabSet {
+        tree: tree,
+        tabs: tabs,
+        focus: 0,
+        next_tab: 2,
+        cols: c,
+        rows: r,
+        scrollback_limit: 1000,
+        cursor_blink: true,
+        valid: true
+    };
+}
+
+pub fn tab_set_split(s: TabSet, dir: Int, ratio: Int) -> TabSet {
+    if s.valid == false { return s; }
+    let tab_id: Int = s.next_tab;
+    let tree2: SplitTree = split_tree_split(s.tree, s.focus, dir, ratio, tab_id);
+    if split_tree_count(tree2) == split_tree_count(s.tree) { return s; }
+    let mut out: TabSet = s;
+    out.tree = tree2;
+    out.tabs = list_push(s.tabs, tab_new(tab_id, s.cols, s.rows));
+    out.next_tab = tab_id + 1;
+    out.focus = split_tree_count(tree2) - 1;
+    return out;
+}
+
+pub fn tab_set_close(s: TabSet) -> TabSet {
+    if s.valid == false { return s; }
+    let tree2: SplitTree = split_tree_close(s.tree, s.focus);
+    let before: List[Int] = layout_leaves(s.tree);
+    let after: List[Int] = layout_leaves(tree2);
+    if list_len(after) == list_len(before) { return s; }
+    let mut f: Int = 0;
+    if list_len(after) > 0 { f = list_get(after, 0); }
+    let mut out: TabSet = s;
+    out.tree = tree2;
+    out.focus = f;
+    return out;
+}
+
+pub fn tab_set_focus_next(s: TabSet) -> TabSet {
+    if s.valid == false { return s; }
+    let leaves: List[Int] = layout_leaves(s.tree);
+    let n: Int = list_len(leaves);
+    if n < 1 { return s; }
+    let mut next: Int = list_get(leaves, 0);
+    let mut i: Int = 0;
+    while i < n {
+        if list_get(leaves, i) == s.focus { next = list_get(leaves, (i + 1) % n); }
+        i = i + 1;
+    }
+    let mut out: TabSet = s;
+    out.focus = next;
+    return out;
+}
+
+pub fn tab_set_focus_prev(s: TabSet) -> TabSet {
+    if s.valid == false { return s; }
+    let leaves: List[Int] = layout_leaves(s.tree);
+    let n: Int = list_len(leaves);
+    if n < 1 { return s; }
+    let mut next: Int = list_get(leaves, n - 1);
+    let mut i: Int = 0;
+    while i < n {
+        if list_get(leaves, i) == s.focus { next = list_get(leaves, (i + n - 1) % n); }
+        i = i + 1;
+    }
+    let mut out: TabSet = s;
+    out.focus = next;
+    return out;
+}
+
+pub fn tab_set_tab(s: TabSet, node: Int) -> Tab {
+    let nd: SplitNode = split_node(s.tree, node);
+    let mut i: Int = 0;
+    while i < list_len(s.tabs) {
+        let t: Tab = list_get(s.tabs, i);
+        if t.id == nd.tab { return t; }
+        i = i + 1;
+    }
+    return tab_new(0, s.cols, s.rows);
+}
+
+pub fn tab_set_layout(s: TabSet) -> List[SplitRect] {
+    return layout_tile(s.tree, 0, 0, s.cols, s.rows);
+}
+
+pub fn tab_set_verify(s: TabSet) -> Bool {
+    if s.valid == false { return false; }
+    if s.cols <= 0 || s.rows <= 0 { return false; }
+    if split_tree_verify(s.tree) == false { return false; }
+    if list_len(s.tabs) < 1 { return false; }
+    let leaves: List[Int] = layout_leaves(s.tree);
+    if list_len(leaves) < 1 { return false; }
+    let mut found: Bool = false;
+    let mut i: Int = 0;
+    while i < list_len(leaves) {
+        if list_get(leaves, i) == s.focus { found = true; }
+        i = i + 1;
+    }
+    return found;
+}

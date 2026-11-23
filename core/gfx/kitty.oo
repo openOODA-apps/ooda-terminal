@@ -1,0 +1,132 @@
+// # ooda-terminal Kitty Graphics Protocol Parser
+//
+// Logline: Parse the kitty graphics control data and decode a raw pixel payload into an image buffer.
+// Setup: Declared capability: None. Pure string and list arithmetic over the image pages; no ambient authority.
+// Beats:
+//   1. Split a kitty graphics payload into its control keys and its base64 data.
+//   2. Read one control key, the action, the format, the image id, and a dimension from the control data.
+//   3. Decode the data into RGBA pixels, refusing a file format, a bad base64 payload, or a length mismatch.
+//
+// Only the raw pixel formats are supported. The file formats need an image decoder that the
+// standard library does not carry, so a file format is refused rather than half decoded.
+
+import "core/gfx/image.oo";
+import "ooda-standard/core/encoding/base64_grp/base64.oo";
+
+pub const KITTY_ACTION_TRANSMIT: Int = 1;
+pub const KITTY_ACTION_PUT: Int = 2;
+pub const KITTY_ACTION_QUERY: Int = 3;
+pub const KITTY_ACTION_DELETE: Int = 4;
+
+pub fn kitty_control(payload: String) -> String {
+    let n: Int = chars_len(payload);
+    if n < 2 { return ""; }
+    if str_slice(payload, 0, 1) != "G" { return ""; }
+    let mut i: Int = 1;
+    while i < n {
+        if str_slice(payload, i, i + 1) == ";" { return str_slice(payload, 1, i); }
+        i = i + 1;
+    }
+    return "";
+}
+
+pub fn kitty_data(payload: String) -> String {
+    let n: Int = chars_len(payload);
+    let mut i: Int = 1;
+    while i < n {
+        if str_slice(payload, i, i + 1) == ";" { return str_slice(payload, i + 1, n); }
+        i = i + 1;
+    }
+    return "";
+}
+
+pub fn kitty_key(control: String, key: String) -> String {
+    let n: Int = chars_len(control);
+    let kn: Int = chars_len(key);
+    if kn < 1 { return ""; }
+    let mut i: Int = 0;
+    while i + kn < n {
+        let at_start: Bool = i == 0 || str_slice(control, i - 1, i) == ",";
+        let hit: Bool = at_start && str_slice(control, i, i + kn) == key;
+        if hit && str_slice(control, i + kn, i + kn + 1) == "=" {
+            let mut j: Int = i + kn + 1;
+            while j < n {
+                if str_slice(control, j, j + 1) == "," { return str_slice(control, i + kn + 1, j); }
+                j = j + 1;
+            }
+            return str_slice(control, i + kn + 1, n);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+pub fn kitty_action(control: String) -> Int {
+    let v: String = kitty_key(control, "a");
+    if v == "T" { return KITTY_ACTION_TRANSMIT; }
+    if v == "p" { return KITTY_ACTION_PUT; }
+    if v == "q" { return KITTY_ACTION_QUERY; }
+    if v == "d" { return KITTY_ACTION_DELETE; }
+    return 0;
+}
+
+pub fn kitty_format(control: String) -> Int {
+    let v: String = kitty_key(control, "f");
+    if v == "24" { return IMG_FMT_RGB24; }
+    if v == "32" { return IMG_FMT_RGBA32; }
+    if v == "PNG" { return IMG_FMT_FILE; }
+    if v == "RGB" { return IMG_FMT_FILE; }
+    if v == "RGBA" { return IMG_FMT_FILE; }
+    return 0;
+}
+
+pub fn kitty_id(control: String) -> Int {
+    let v: String = kitty_key(control, "i");
+    let mut n: Int = 0;
+    let mut i: Int = 0;
+    while i < chars_len(v) {
+        let k: Int = img_digit(str_slice(v, i, i + 1));
+        if k < 0 { return 0; }
+        n = n * 10 + k;
+        if n > 2147483647 { return 0; }
+        i = i + 1;
+    }
+    return n;
+}
+
+pub fn kitty_dim(control: String, key: String) -> Int {
+    let v: String = kitty_key(control, key);
+    let mut n: Int = 0;
+    let mut i: Int = 0;
+    while i < chars_len(v) {
+        let k: Int = img_digit(str_slice(v, i, i + 1));
+        if k < 0 { return 0; }
+        n = n * 10 + k;
+        if n > IMG_MAX_DIM { return 0; }
+        i = i + 1;
+    }
+    return n;
+}
+
+pub fn kitty_decode(data: String, format: Int, width: Int, height: Int) -> ImgImage {
+    let bad: ImgImage = img_image_new(0, 0, 0);
+    if format != IMG_FMT_RGB24 && format != IMG_FMT_RGBA32 { return bad; }
+    if width <= 0 || height <= 0 { return bad; }
+    let r: Result[String, String] = base64_decode(data);
+    if r.is_err() { return bad; }
+    let raw: String = r.unwrap();
+    let bpp: Int = if format == IMG_FMT_RGBA32 { 4 } else { 3 };
+    if byte_len(raw) != width * height * bpp { return bad; }
+    let mut img: ImgImage = img_image_new(0, width, height);
+    let mut i: Int = 0;
+    while i < width * height {
+        let at: Int = i * bpp;
+        let rv: Int = byte_at(raw, at);
+        let gv: Int = byte_at(raw, at + 1);
+        let bv: Int = byte_at(raw, at + 2);
+        let av: Int = if bpp == 4 { byte_at(raw, at + 3) } else { 255 };
+        img = img_set_pixel(img, i % width, i / width, (av << 24) | (rv << 16) | (gv << 8) | bv);
+        i = i + 1;
+    }
+    return img;
+}

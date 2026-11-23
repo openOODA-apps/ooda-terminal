@@ -1,0 +1,71 @@
+// # ooda-terminal Image Placement Into Cell Grid
+//
+// Logline: Mark the cells an image covers so a renderer can find and composite it, refusing a rect that escapes.
+// Setup: Declared capability: None. Pure list arithmetic over TermGrid; the grid comes from the shared engine.
+// Beats:
+//   1. Build a placement of an image id over a cell rectangle, refusing a bad id or an empty rectangle.
+//   2. Test whether a placement fits inside a grid of the given size.
+//   3. Mark the covered cells with the image id, or clear the mark again.
+//
+// The pixels themselves are composited by the renderer, which reads the image out of the
+// registry and paints it under the cells this placement marks.
+
+import "ooda-standard/core/app/ui/term/anchor.oo";
+
+pub type ImgPlacement = struct {
+    id: Int,
+    col: Int,
+    row: Int,
+    cols: Int,
+    rows: Int,
+    valid: Bool
+};
+
+pub fn img_placement_new(id: Int, col: Int, row: Int, cols: Int, rows: Int) -> ImgPlacement {
+    if id <= 0 { return ImgPlacement { id: 0, col: 0, row: 0, cols: 0, rows: 0, valid: false }; }
+    if col < 0 || row < 0 { return ImgPlacement { id: 0, col: 0, row: 0, cols: 0, rows: 0, valid: false }; }
+    if cols <= 0 || rows <= 0 { return ImgPlacement { id: 0, col: 0, row: 0, cols: 0, rows: 0, valid: false }; }
+    return ImgPlacement { id: id, col: col, row: row, cols: cols, rows: rows, valid: true };
+}
+
+pub fn img_placement_fits(p: ImgPlacement, grid_cols: Int, grid_rows: Int) -> Bool {
+    if p.valid == false { return false; }
+    if grid_cols <= 0 || grid_rows <= 0 { return false; }
+    if p.col + p.cols > grid_cols { return false; }
+    if p.row + p.rows > grid_rows { return false; }
+    return true;
+}
+
+pub fn img_place(g: TermGrid, p: ImgPlacement) -> TermGrid {
+    if !img_placement_fits(p, g.cols, g.row_count) { return g; }
+    let mut out: TermGrid = g;
+    let mut row: Int = p.row;
+    while row < p.row + p.rows {
+        let mut col: Int = p.col;
+        while col < p.col + p.cols {
+            let mut cell: TermCell = grid_get(out, row, col);
+            cell.link = p.id;
+            out = grid_set(out, row, col, cell);
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    return out;
+}
+
+pub fn img_place_clear(g: TermGrid, p: ImgPlacement) -> TermGrid {
+    if !img_placement_fits(p, g.cols, g.row_count) { return g; }
+    let mut out: TermGrid = g;
+    let mut row: Int = p.row;
+    while row < p.row + p.rows {
+        let mut col: Int = p.col;
+        while col < p.col + p.cols {
+            let mut cell: TermCell = grid_get(out, row, col);
+            cell.link = 0;
+            out = grid_set(out, row, col, cell);
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    return out;
+}

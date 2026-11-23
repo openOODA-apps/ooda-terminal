@@ -1,4 +1,4 @@
-// # ooda-console Surface Binding
+// # ooda-terminal Surface Binding
 //
 // Logline: Bind the engine grid to a Wayland window: draw the styled row runs into the shared canvas and map a key
 //   event to the bytes a child expects.
@@ -18,31 +18,31 @@ import "ooda-standard/core/app/ui/widget/draw.oo";
 import "ooda-standard/core/primitives/byte/byte.oo";
 import "core/rows.oo";
 
-pub const CONSOLE_APP_ID: String = "org.openooda.console";
+pub const TERMINAL_APP_ID: String = "org.openooda.terminal";
 
-pub fn console_surface_open(fs: &FsCap, fw: &FsWriteCap, env: &EnvCap, ffi: &FfiCap,
+pub fn terminal_surface_open(fs: &FsCap, fw: &FsWriteCap, env: &EnvCap, ffi: &FfiCap,
         title: String, cols: Int, rows: Int) -> WlWindow {
     let w: Int = cols * 9;
     let h: Int = rows * 18;
-    return wl_win_open(fs, fw, env, ffi, title, CONSOLE_APP_ID, w, h);
+    return wl_win_open(fs, fw, env, ffi, title, TERMINAL_APP_ID, w, h);
 }
 
-pub fn console_surface_font(fs_r: &FsReadCap, env: &EnvCap, px: Int) -> UiFont {
+pub fn terminal_surface_font(fs_r: &FsReadCap, env: &EnvCap, px: Int) -> UiFont {
     return ui_font_new(ttf_load_ui_font(fs_r, env, true), px);
 }
 
-pub fn console_surface_draw(ffi: &FfiCap, c: UiCanvas, bf: &mut UiFont, rows: List[ConsoleRow],
+pub fn terminal_surface_draw(ffi: &FfiCap, c: UiCanvas, bf: &mut UiFont, rows: List[TerminalRow],
         pal: OoThemePalette) -> Void {
     if c.addr == 0 { return; }
     ui_fill_rect(ffi, c, ui_rect_new(0, 0, c.w, c.h), pal.bg_rgba);
     let lh: Int = bf.line_h;
     let mut r: Int = 0;
     while r < list_len(rows) {
-        let row: ConsoleRow = list_get(rows, r);
+        let row: TerminalRow = list_get(rows, r);
         let mut x: Int = 4;
         let mut i: Int = 0;
         while i < list_len(row.runs) {
-            let run: ConsoleRun = list_get(row.runs, i);
+            let run: TerminalRun = list_get(row.runs, i);
             let fg: Int = color_rgba(run.fg, true);
             let bg: Int = color_rgba(run.bg, false);
             let drawn: Int = ui_text_draw(ffi, c, bf, x, r * lh, run.text, ui_text_style(fg, bg, c.w - x));
@@ -54,7 +54,7 @@ pub fn console_surface_draw(ffi: &FfiCap, c: UiCanvas, bf: &mut UiFont, rows: Li
     }
 }
 
-pub fn console_key_bytes(action: String, ch: String) -> String {
+pub fn terminal_key_bytes(action: String, ch: String) -> String {
     if action == "enter" { return byte_chr(13); }
     if action == "backspace" { return byte_chr(127); }
     if action == "tab" { return byte_chr(9); }

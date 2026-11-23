@@ -1,11 +1,11 @@
-name=ooda-console
-version=0.1.0
+name=ooda-terminal
+version=1.0.0
 layer=apps
 category=UI
-tags=terminal,vt500,console,pty,wayland,apps
+tags=terminal,vt500,pty,wayland,graphics,osc133,tabs,apps
 upstream=none
 status=shipped
-description=apps-layer GUI terminal front end that runs a child in a PTY and renders its VT500 output through the shared ooda-standard terminal engine
+description=apps-layer terminal that turns a program byte stream into a character grid, with a windowed front end, a headless replay verb, a live child verb, kitty and sixel graphics, OSC 133 shell integration, tabs and splits, and configuration
 caps=FsRead,FsWrite,Fs,Process,Env,Ffi
 deps=ooda-standard
 entry=cli/main.oo

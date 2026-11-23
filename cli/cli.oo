@@ -1,15 +1,21 @@
-// # ooda-console CLI Argument & Metadata Helpers
+// # ooda-terminal CLI Argument, Theme, And Metadata Helpers
 //
-// Logline: Fail-closed subcommand detection, one operand-taking verb, and the metadata emitters for the console CLI.
-// Setup: Declared capability: None. Pure argument parsing over the runtime supplied argument list.
+// Logline: Fail-closed subcommand detection, one operand-taking verb, the palette resolution, and the metadata emitters
+//   for the terminal CLI.
+// Setup: Declared capability: Env for the theme overrides. Pure argument parsing over the runtime supplied argument
+//   list; the palette comes from the canonical ooda-standard ootheme engine.
 // Beats:
 //   1. Map each known flag or bare subcommand to its mode. The --json and --self-test arguments are flags and the
 //     verb is selected independently of argument order.
 //   2. Return "unknown" when ANY argument is not recognized (fail closed). More than one verb is a conflict. The
 //     run, pty-run, gui, and theme verbs take exactly one operand.
-//   3. Emit the help text and the JSON metadata record for the component.
+//   3. Resolve the palette under NO_COLOR and OODA_THEME, name its glyph family, and emit the help text and the JSON
+//     metadata record for the component.
 
-pub fn ooconsole_cli_has(args: List[String], flag: String) -> Bool {
+import "ooda-standard/core/app/ui/ootheme.oo";
+import "ooda-standard/fs/process/env.oo";
+
+pub fn ooterm_cli_has(args: List[String], flag: String) -> Bool {
     let mut i: Int = 0;
     while i < list_len(args) {
         let a: String = list_get(args, i);
@@ -20,7 +26,7 @@ pub fn ooconsole_cli_has(args: List[String], flag: String) -> Bool {
     return false;
 }
 
-fn ooconsole_cli_kind(a: String) -> String {
+fn ooterm_cli_kind(a: String) -> String {
     if a == "-h" { return "help"; }
     if a == "--help" { return "help"; }
     if a == "-v" { return "version"; }
@@ -39,7 +45,7 @@ fn ooconsole_cli_kind(a: String) -> String {
     return "";
 }
 
-pub fn ooconsole_cli_mode(args: List[String]) -> String {
+pub fn ooterm_cli_mode(args: List[String]) -> String {
     if list_len(args) == 0 { return "default"; }
     let a0: String = list_get(args, 0);
     if a0 == "about" { return "about"; }
@@ -52,7 +58,7 @@ pub fn ooconsole_cli_mode(args: List[String]) -> String {
     while i < list_len(args) {
         let a: String = list_get(args, i);
         if a == "--" && verb == "pty-run" && got_op { break; }
-        let k: String = ooconsole_cli_kind(a);
+        let k: String = ooterm_cli_kind(a);
         if k == "" {
             if want_op && got_op == false {
                 got_op = true;
@@ -73,19 +79,19 @@ pub fn ooconsole_cli_mode(args: List[String]) -> String {
         i = i + 1;
     }
     if verbs > 1 { return "conflict"; }
-    if ooconsole_cli_has(args, "--help") || ooconsole_cli_has(args, "-h") { return "help"; }
-    if ooconsole_cli_has(args, "--version") || ooconsole_cli_has(args, "-v") { return "version"; }
+    if ooterm_cli_has(args, "--help") || ooterm_cli_has(args, "-h") { return "help"; }
+    if ooterm_cli_has(args, "--version") || ooterm_cli_has(args, "-v") { return "version"; }
     if verbs == 0 { return "default"; }
     return verb;
 }
 
-pub fn ooconsole_cli_operand(args: List[String]) -> String {
+pub fn ooterm_cli_operand(args: List[String]) -> String {
     let mut want: Bool = false;
     let mut i: Int = 0;
     while i < list_len(args) {
         let a: String = list_get(args, i);
         if a == "--" { break; }
-        let k: String = ooconsole_cli_kind(a);
+        let k: String = ooterm_cli_kind(a);
         if k == "run" || k == "theme" || k == "pty-run" || k == "gui" { want = true; }
         if k == "" && want { return a; }
         i = i + 1;
@@ -93,7 +99,7 @@ pub fn ooconsole_cli_operand(args: List[String]) -> String {
     return "";
 }
 
-pub fn ooconsole_cli_print_help(name: String, ver: String, desc: String) -> Int {
+pub fn ooterm_cli_print_help(name: String, ver: String, desc: String) -> Int {
     println(name + " " + ver + " - " + desc);
     println("usage: " + name + " run <file> [--ansi] | pty-run <prog> [-- <args...>] | gui [prog]");
     println("       theme [name] | inspect | status | verify | about [--json]");
@@ -101,8 +107,44 @@ pub fn ooconsole_cli_print_help(name: String, ver: String, desc: String) -> Int 
     return 0;
 }
 
-pub fn ooconsole_cli_json(name: String, ver: String, layer: String, cat: String, active: Int,
+pub fn ooterm_cli_json(name: String, ver: String, layer: String, cat: String, active: Int,
         status: String) -> String {
     return "{\"component\":\"" + name + "\",\"version\":\"" + ver + "\",\"layer\":\"" + layer + "\",\"category\":\""
             + cat + "\",\"active\":" + active.to_string() + ",\"status\":\"" + status + "\"}";
+}
+
+pub fn ooterm_glyph_style(p: OoThemePalette) -> String {
+    if p.name == "1982" { return "arcade-block"; }
+    if p.name == "ooda-light" { return "retro-round"; }
+    if p.name == "no-color" { return "plain"; }
+    return "cyber-sharp";
+}
+
+pub fn ooterm_theme_resolve(env: &EnvCap, requested: String) -> OoThemePalette {
+    let mut theme: String = "";
+    let mut no_color: Bool = false;
+    let r1: Result[String, String] = env_get(env, "OODA_THEME");
+    if r1.is_ok() {
+        let v: String = match r1 { Ok(s) => s, Err(_) => "" };
+        if chars_len(v) > 0 { theme = v; }
+    }
+    let r2: Result[String, String] = env_get(env, "NO_COLOR");
+    if r2.is_ok() {
+        let v: String = match r2 { Ok(s) => s, Err(_) => "" };
+        if chars_len(v) > 0 { no_color = true; }
+    }
+    let r3: Result[String, String] = env_get(env, "OODA_NO_COLOR");
+    if r3.is_ok() {
+        let v: String = match r3 { Ok(s) => s, Err(_) => "" };
+        if chars_len(v) > 0 { no_color = true; }
+    }
+    let r4: Result[String, String] = env_get(env, "OO_NO_COLOR");
+    if r4.is_ok() {
+        let v: String = match r4 { Ok(s) => s, Err(_) => "" };
+        if chars_len(v) > 0 { no_color = true; }
+    }
+    if no_color { return ootheme_resolve("no-color"); }
+    if chars_len(theme) > 0 && ootheme_known(theme) { return ootheme_resolve(theme); }
+    if ootheme_known(requested) { return ootheme_resolve(requested); }
+    return ootheme_resolve("ooda-dark");
 }

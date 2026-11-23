@@ -1,16 +1,16 @@
-# ooda-console Makefile
+# ooda-terminal Makefile
 #
-# Apps-layer GUI terminal front end on the shared ooda-standard terminal engine.
+# Apps-layer terminal on the shared ooda-standard terminal engine.
 #
 # The VT500 engine (vt parser, grid, screen semantics, pixel raster, replay session) lives in
 # ooda-standard/core/app/ui/term and is imported as "ooda-standard/core/app/ui/term/...".
-# The compiler resolves that prefix against OODA_STANDARD_ROOT, so the root must be the standard
-# SOURCE tree that carries core/app/ui/term. The sibling checkout is preferred; the installed copy
-# under ~/.openooda is the fallback. Override with `make OODA_STANDARD_ROOT=<path>`.
+# The compiler resolves that prefix against OODA_STANDARD_ROOT, so the root must be a standard tree
+# that carries core/app/ui/term. The installed copy under ~/.openooda is preferred; the sibling source
+# checkout is the fallback. Override with `make OODA_STANDARD_ROOT=<path>`.
 
 OODA_COMPILER ?= $(HOME)/.openooda/bin/ooda-compiler
 OODA_VERIFY ?= $(HOME)/.openooda/bin/ooda-verify
-OODA_STANDARD_ROOT ?= $(firstword $(wildcard $(CURDIR)/../../openOODA-core/ooda-standard $(HOME)/.openooda/ooda-standard))
+OODA_STANDARD_ROOT ?= $(firstword $(wildcard $(HOME)/.openooda/ooda-standard $(CURDIR)/../../openOODA-core/ooda-standard))
 OODA_RUNTIME_ROOT ?= $(HOME)/.openooda/bin
 OODACODEX ?= $(HOME)/.openooda/AGENTS.md
 export OODA_COMPILER OODA_VERIFY OODA_STANDARD_ROOT OODA_RUNTIME_ROOT OODACODEX
@@ -20,18 +20,22 @@ OODA_FS_WRITEDIR ?= $(CURDIR):/tmp
 OODA_NO_JAIL ?= 1
 export OO_LIST_AMBIENT_QUOTA
 export OODA_FS_READDIR OODA_FS_WRITEDIR OODA_NO_JAIL
+OODA_LOCAL_ONLY ?= 1
+export OODA_LOCAL_ONLY
 
 PREFIX ?= $(HOME)/.openooda/bin
-BIN := bin/ooda-console
+BIN := bin/ooda-terminal
 FUNC_BIN := bin/test_functional
 REFUSE_BIN := bin/test_refusal
 EMIT_BIN := bin/emit_vt
-REPO_NAME := ooda-console
-VER := 0.1.0
+REPO_NAME := ooda-terminal
+VER := 1.0.0
+FUNC_ASSERTIONS := 35
+REFUSE_ASSERTIONS := 25
 SRC := $(shell find cli core tests -name "*.oo" 2>/dev/null) anchor.oo
-ENV := OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODA_COMPILER=$(OODA_COMPILER) OODA_STANDARD_ROOT=$(OODA_STANDARD_ROOT) OODA_RUNTIME_ROOT=$(OODA_RUNTIME_ROOT) OODACODEX=$(OODACODEX) OODA_FS_READDIR=$(OODA_FS_READDIR) OODA_FS_WRITEDIR=$(OODA_FS_WRITEDIR) OODA_NO_JAIL=1
+ENV := OO_LIST_AMBIENT_QUOTA=$(OO_LIST_AMBIENT_QUOTA) OODA_COMPILER=$(OODA_COMPILER) OODA_STANDARD_ROOT=$(OODA_STANDARD_ROOT) OODA_RUNTIME_ROOT=$(OODA_RUNTIME_ROOT) OODACODEX=$(OODACODEX) OODA_FS_READDIR=$(OODA_FS_READDIR) OODA_FS_WRITEDIR=$(OODA_FS_WRITEDIR) OODA_NO_JAIL=1 OODA_LOCAL_ONLY=$(OODA_LOCAL_ONLY)
 
-.PHONY: all build verify test det check cycle gate line-cap file-law academy density vocab clean shape link-law
+.PHONY: all build verify test det check cycle gate line-cap file-law file-cap academy density vocab clean shape link-law
 
 all: build verify test det
 
@@ -90,6 +94,11 @@ file-law:
 	done; \
 	if [ "$$violations" -gt 0 ]; then echo "FAIL: file-law violations"; exit 1; fi; \
 	echo "PASS: file law holds"
+
+file-cap:
+	@n=$$(find . -type f -not -path "./.git/*" -not -path "./bin/*" -not -path "./dist/*" -not -path "./.ooda-cache/*" | wc -l); \
+	if [ "$$n" -gt 32 ]; then echo "VIOLATION: repo holds $$n files (exceeds 32)"; exit 1; fi; \
+	echo "PASS: file law holds ($$n files, max 32)"
 
 academy:
 	@failures=0; \
@@ -160,11 +169,11 @@ gate:
 	@$(OODA_VERIFY) cycle $(CURDIR) < /dev/null
 	@echo "PASS: composite gate holds (ooda-verify quorum_mask=255)"
 
-verify: line-cap file-law academy density vocab check shape link-law cycle
+verify: line-cap file-law file-cap academy density vocab check shape link-law cycle
 
 test: $(BIN) $(FUNC_BIN) $(REFUSE_BIN) $(EMIT_BIN)
-	@PATH=/nonexistent ./$(FUNC_BIN) < /dev/null | grep -q "PASS: 23/23 console assertions" && echo "PASS: functional suite (23 assertions)"
-	@PATH=/nonexistent ./$(REFUSE_BIN) < /dev/null | grep -q "PASS: 14/14 console refusal assertions" && echo "PASS: refusal suite (14 assertions)"
+	@PATH=/nonexistent ./$(FUNC_BIN) < /dev/null | grep -q "PASS: $(FUNC_ASSERTIONS)/$(FUNC_ASSERTIONS) terminal assertions" && echo "PASS: functional suite ($(FUNC_ASSERTIONS) assertions)"
+	@PATH=/nonexistent ./$(REFUSE_BIN) < /dev/null | grep -q "PASS: $(REFUSE_ASSERTIONS)/$(REFUSE_ASSERTIONS) terminal refusal assertions" && echo "PASS: refusal suite ($(REFUSE_ASSERTIONS) assertions)"
 	@./$(BIN) --help | grep -q "$(REPO_NAME) $(VER)" && echo "PASS: --help"
 	@./$(BIN) --version | grep -q "$(VER)" && echo "PASS: --version"
 	@./$(BIN) status | grep -q "PASS" && echo "PASS: status"
@@ -205,5 +214,5 @@ clean:
 
 install: build
 	@mkdir -p $(DESTDIR)$(PREFIX)
-	install -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/ooda-console
-	@echo "installed ooda-console to $(DESTDIR)$(PREFIX)"
+	install -m 0755 $(BIN) $(DESTDIR)$(PREFIX)/ooda-terminal
+	@echo "installed ooda-terminal to $(DESTDIR)$(PREFIX)"

@@ -1,0 +1,101 @@
+// # ooda-terminal Split Layout Geometry
+//
+// Logline: Place the leaves of a split tree into screen rectangles, tiled or stacked.
+// Setup: Declared capability: None. Pure list arithmetic over the split pages; no ambient authority.
+// Beats:
+//   1. Build a rectangle for one leaf of the tree.
+//   2. Tile the leaves by walking the tree and cutting each branch at its ratio.
+//   3. Stack the leaves into the same rectangle, list the leaves in order, and verify the result.
+
+import "core/tabs/split.oo";
+
+pub type SplitRect = struct {
+    node: Int,
+    x: Int,
+    y: Int,
+    w: Int,
+    h: Int,
+    valid: Bool
+};
+
+pub fn split_rect_new(node: Int, x: Int, y: Int, w: Int, h: Int) -> SplitRect {
+    if node < 0 || w <= 0 || h <= 0 { return SplitRect { node: 0 - 1, x: 0, y: 0, w: 0, h: 0, valid: false }; }
+    if x < 0 || y < 0 { return SplitRect { node: 0 - 1, x: 0, y: 0, w: 0, h: 0, valid: false }; }
+    return SplitRect { node: node, x: x, y: y, w: w, h: h, valid: true };
+}
+
+fn layout_walk(t: SplitTree, node: Int, x: Int, y: Int, w: Int, h: Int, acc: List[SplitRect]) -> List[SplitRect] {
+    if node < 0 || node >= t.count { return acc; }
+    let nd: SplitNode = split_node(t, node);
+    if nd.valid == false { return acc; }
+    let mut out: List[SplitRect] = acc;
+    if nd.kind == SPLIT_LEAF {
+        if nd.tab <= 0 { return out; }
+        return list_push(out, split_rect_new(node, x, y, w, h));
+    }
+    if nd.dir == SPLIT_H {
+        let first_w: Int = (w * nd.ratio) / 100;
+        out = layout_walk(t, nd.first, x, y, first_w, h, out);
+        out = layout_walk(t, nd.second, x + first_w, y, w - first_w, h, out);
+        return out;
+    }
+    let first_h: Int = (h * nd.ratio) / 100;
+    out = layout_walk(t, nd.first, x, y, w, first_h, out);
+    out = layout_walk(t, nd.second, x, y + first_h, w, h - first_h, out);
+    return out;
+}
+
+fn layout_leaves_walk(t: SplitTree, node: Int, acc: List[Int]) -> List[Int] {
+    if node < 0 || node >= t.count { return acc; }
+    let nd: SplitNode = split_node(t, node);
+    if nd.valid == false { return acc; }
+    let mut leaf_acc: List[Int] = acc;
+    if nd.kind == SPLIT_LEAF {
+        if nd.tab <= 0 { return leaf_acc; }
+        return list_push(leaf_acc, node);
+    }
+    leaf_acc = layout_leaves_walk(t, nd.first, leaf_acc);
+    leaf_acc = layout_leaves_walk(t, nd.second, leaf_acc);
+    return leaf_acc;
+}
+
+pub fn layout_tile(t: SplitTree, x: Int, y: Int, w: Int, h: Int) -> List[SplitRect] {
+    if t.valid == false { return list_new(); }
+    if w <= 0 || h <= 0 { return list_new(); }
+    return layout_walk(t, t.root, x, y, w, h, list_new());
+}
+
+pub fn layout_stack(t: SplitTree, x: Int, y: Int, w: Int, h: Int) -> List[SplitRect] {
+    if t.valid == false { return list_new(); }
+    if w <= 0 || h <= 0 { return list_new(); }
+    let mut out: List[SplitRect] = list_new();
+    let leaves: List[Int] = layout_leaves(t);
+    let mut i: Int = 0;
+    while i < list_len(leaves) {
+        out = list_push(out, split_rect_new(list_get(leaves, i), x, y, w, h));
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn layout_leaves(t: SplitTree) -> List[Int] {
+    if t.valid == false { return list_new(); }
+    return layout_leaves_walk(t, t.root, list_new());
+}
+
+pub fn layout_rect_at(rects: List[SplitRect], idx: Int) -> SplitRect {
+    if idx < 0 || idx >= list_len(rects) { return SplitRect { node: 0 - 1, x: 0, y: 0, w: 0, h: 0, valid: false }; }
+    return list_get(rects, idx);
+}
+
+pub fn layout_verify(t: SplitTree, rects: List[SplitRect]) -> Bool {
+    if split_tree_verify(t) == false { return false; }
+    let leaves: List[Int] = layout_leaves(t);
+    if list_len(leaves) != list_len(rects) { return false; }
+    let mut i: Int = 0;
+    while i < list_len(rects) {
+        if layout_rect_at(rects, i).valid == false { return false; }
+        i = i + 1;
+    }
+    return true;
+}
