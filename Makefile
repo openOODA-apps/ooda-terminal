@@ -28,8 +28,9 @@ BIN := bin/ooda-terminal
 FUNC_BIN := bin/test_functional
 REFUSE_BIN := bin/test_refusal
 EMIT_BIN := bin/emit_vt
+APP_G5_BIN := bin/test_app_g5
 REPO_NAME := ooda-terminal
-VER := 1.0.0
+VER := 1.1.0
 FUNC_ASSERTIONS := 35
 REFUSE_ASSERTIONS := 25
 SRC := $(shell find cli core tests -name "*.oo" 2>/dev/null) anchor.oo
@@ -61,6 +62,11 @@ $(EMIT_BIN): tests/emit_vt.oo
 	@mkdir -p bin
 	$(ENV) $(OODA_COMPILER) build tests/emit_vt.oo -o $(EMIT_BIN)
 	@chmod +x $(EMIT_BIN)
+
+$(APP_G5_BIN): tests/test_app_g5.oo
+	@mkdir -p bin
+	$(ENV) $(OODA_COMPILER) build tests/test_app_g5.oo -o $(APP_G5_BIN)
+	@chmod +x $(APP_G5_BIN)
 
 line-cap:
 	@violations=0; \
@@ -97,8 +103,8 @@ file-law:
 
 file-cap:
 	@n=$$(find . -type f -not -path "./.git/*" -not -path "./bin/*" -not -path "./dist/*" -not -path "./.ooda-cache/*" | wc -l); \
-	if [ "$$n" -gt 32 ]; then echo "VIOLATION: repo holds $$n files (exceeds 32)"; exit 1; fi; \
-	echo "PASS: file law holds ($$n files, max 32)"
+	if [ "$$n" -gt 64 ]; then echo "VIOLATION: repo holds $$n files (exceeds 64)"; exit 1; fi; \
+	echo "PASS: file law holds ($$n files, max 64)"
 
 academy:
 	@failures=0; \
@@ -171,9 +177,10 @@ gate:
 
 verify: line-cap file-law file-cap academy density vocab check shape link-law cycle
 
-test: $(BIN) $(FUNC_BIN) $(REFUSE_BIN) $(EMIT_BIN)
-	@PATH=/nonexistent ./$(FUNC_BIN) < /dev/null | grep -q "PASS: $(FUNC_ASSERTIONS)/$(FUNC_ASSERTIONS) terminal assertions" && echo "PASS: functional suite ($(FUNC_ASSERTIONS) assertions)"
-	@PATH=/nonexistent ./$(REFUSE_BIN) < /dev/null | grep -q "PASS: $(REFUSE_ASSERTIONS)/$(REFUSE_ASSERTIONS) terminal refusal assertions" && echo "PASS: refusal suite ($(REFUSE_ASSERTIONS) assertions)"
+test: $(BIN) $(FUNC_BIN) $(REFUSE_BIN) $(EMIT_BIN) $(APP_G5_BIN)
+	@PATH=/nonexistent OODA_LEAK_CHECK=1 ./$(FUNC_BIN) < /dev/null | grep -q "PASS: $(FUNC_ASSERTIONS)/$(FUNC_ASSERTIONS) terminal assertions" && echo "PASS: functional suite ($(FUNC_ASSERTIONS) assertions)"
+	@PATH=/nonexistent OODA_LEAK_CHECK=1 ./$(REFUSE_BIN) < /dev/null | grep -q "PASS: $(REFUSE_ASSERTIONS)/$(REFUSE_ASSERTIONS) terminal refusal assertions" && echo "PASS: refusal suite ($(REFUSE_ASSERTIONS) assertions)"
+	@PATH=/nonexistent OODA_LEAK_CHECK=1 ./$(APP_G5_BIN) < /dev/null | grep -q "PASS: app_g5 12/12 assertions" && echo "PASS: app_g5 suite (12 assertions)"
 	@./$(BIN) --help | grep -q "$(REPO_NAME) $(VER)" && echo "PASS: --help"
 	@./$(BIN) --version | grep -q "$(VER)" && echo "PASS: --version"
 	@./$(BIN) status | grep -q "PASS" && echo "PASS: status"

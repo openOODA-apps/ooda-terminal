@@ -12,6 +12,7 @@
 
 import "anchor.oo";
 import "cli/about.oo";
+import "cli/app_launch.oo";
 import "cli/cli.oo";
 import "cli/gui.oo";
 import "cli/run.oo";
@@ -81,6 +82,21 @@ pub fn main(fs_r: &FsReadCap, fs_w: &FsWriteCap, fs: &FsCap, env: &EnvCap, proc:
         ffi: &FfiCap, args: List[String]) -> Result[Int, String] {
     let name: String = ooterm_component_name();
     let ver: String = ooterm_version();
+    let a0: String = if list_len(args) > 0 { list_get(args, 0) } else { "" };
+    let a1: String = if list_len(args) > 1 { list_get(args, 1) } else { "" };
+    if ooterm_selftest() == false {
+        println("FAIL: " + name + " self-test failed");
+        return Ok(1);
+    }
+    if (a0 == "--app" || (a0 == "--json" && a1 == "--app")) {
+        return ooterm_app_launch_run(args, name, ver);
+    }
+    if (a0 == "tui-apps" || (a0 == "--json" && a1 == "tui-apps")) {
+        return ooterm_tui_apps_run(args, name, ver);
+    }
+    if (a0 == "theme-sync" || (a0 == "--json" && a1 == "theme-sync")) {
+        return ooterm_theme_sync_run(args, name, ver);
+    }
     let mode: String = ooterm_cli_mode(args);
     if mode == "unknown" || mode == "conflict" {
         println("ERR " + name + ": " + mode + " argument");
@@ -95,21 +111,17 @@ pub fn main(fs_r: &FsReadCap, fs_w: &FsWriteCap, fs: &FsCap, env: &EnvCap, proc:
         return Ok(0);
     }
     if mode == "about" { return Ok(ooterm_about_run(env, args)); }
-    if ooterm_selftest() == false {
-        println("FAIL: " + name + " self-test failed");
-        return Ok(1);
-    }
     if mode == "run" { return ooterm_run_replay(fs_r, env, args, name, ver); }
     if mode == "pty-run" { return ooterm_pty_run(proc, fs_r, env, args, name, ver); }
     if mode == "gui" { return ooterm_gui_run(fs_r, fs_w, fs, env, proc, ffi, args, name); }
     if mode == "theme" {
         let op: String = ooterm_cli_operand(args);
         let tname: String = if op == "" { "ooda-dark" } else { op };
-        if ootheme_known(tname) == false {
+        if !ooterm_theme_admit(tname) {
             println("ERR " + name + ": unknown theme " + tname);
             return Ok(2);
         }
-        let pal: OoThemePalette = ootheme_resolve(tname);
+        let pal: OoThemePalette = ooterm_theme_resolve_any(tname);
         if ooterm_cli_has(args, "--json") {
             println(ootheme_json(pal));
             return Ok(0);

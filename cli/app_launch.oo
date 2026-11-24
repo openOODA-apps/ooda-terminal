@@ -1,0 +1,226 @@
+// # ooda-terminal TUI App Launcher, Font Control Catalog & Theme Sync
+//
+// Logline: Launches floating or tiled TUI control centers, lists bundled font defaults, and syncs OKLCH themes.
+// Setup: Zero process execution inside CLI planning; validates tool, subcommand, geometry, and theme fail-closed.
+// Beats:
+//   1. Validate target tool names and space-delimited subcommand tokens against traversal and shell metacharacters.
+//   2. Expose `tui-apps` catalog of the 5 control centers plus bundled monospace/UI/icon/emoji font defaults.
+//   3. Parse and validate `--app <id-or-tool> [subcmd] [--floating|--tiled] [--theme <name>]` and `theme-sync`.
+
+import "ooda-standard/core/app/ui/omarchy/first_boot.oo";
+import "ooda-standard/core/app/ui/omarchy/theme_fanout.oo";
+import "ooda-standard/core/app/ui/ootheme.oo";
+import "ooda-standard/core/format/json_writer.oo";
+import "ooda-standard/fs/file/fs_grp/fs_invariants.oo";
+
+type TermAppPlan = struct {
+    id: String,
+    tool: String,
+    subcmd: String,
+    geometry: String,
+    cols: Int,
+    rows: Int,
+    theme: String,
+    json: Bool,
+    ok: Bool,
+    err: String
+};
+
+fn term_token_safe(tok: String) -> Bool {
+    if chars_len(tok) == 0 || chars_len(tok) > 64 { return false; }
+    if str_starts_with(tok, "-") || str_contains(tok, "..") || str_contains(tok, "/") { return false; }
+    if str_contains(tok, ";") || str_contains(tok, "|") || str_contains(tok, "&") || str_contains(tok, "$") {
+        return false;
+    }
+    return oo_arg_ok(tok);
+}
+
+pub fn ooterm_app_spec_valid(tool: String, subcmd: String) -> Bool {
+    if !term_token_safe(tool) { return false; }
+    if subcmd == "" { return true; }
+    let parts: List[String] = str_split(str_trim(subcmd), " ");
+    let mut i: Int = 0;
+    while i < list_len(parts) {
+        let p: String = str_trim(list_get(parts, i));
+        if p == "" || !term_token_safe(p) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+pub fn ooterm_theme_admit(t: String) -> Bool {
+    if ootheme_known(t) { return true; }
+    return omarchy_oklch_find(t).name != "";
+}
+
+pub fn ooterm_theme_resolve_any(tname: String) -> OoThemePalette {
+    if ootheme_known(tname) { return ootheme_resolve(tname); }
+    let sp: OklchThemeSpec = omarchy_oklch_find(tname);
+    if sp.name == "" { return ootheme_resolve("ooda-dark"); }
+    let bname: String = if sp.mode == "light" { "ooda-light" } else { "ooda-dark" };
+    let base: OoThemePalette = ootheme_resolve(bname);
+    return OoThemePalette {
+        name: sp.name, bg_rgba: base.bg_rgba, surface_rgba: base.surface_rgba, fg_rgba: base.fg_rgba,
+        accent_rgba: base.accent_rgba, ok_rgba: base.ok_rgba, warn_rgba: base.warn_rgba,
+        err_rgba: base.err_rgba, ansi_hdr: base.ansi_hdr, ansi_ok: base.ansi_ok,
+        ansi_rst: base.ansi_rst, border_tl: base.border_tl, border_tr: base.border_tr,
+        border_bl: base.border_bl, border_br: base.border_br, border_h: base.border_h,
+        border_v: base.border_v, checksum: base.checksum
+    };
+}
+
+pub fn ooterm_tui_apps_run(args: List[String], name: String, ver: String) -> Result[Int, String] {
+    let mut json: Bool = false;
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if a == "tui-apps" {
+            i = i + 1;
+            continue;
+        }
+        if a == "--json" {
+            json = true;
+            i = i + 1;
+            continue;
+        }
+        println("ERR " + name + " tui-apps: unknown argument " + a);
+        return Ok(2);
+    }
+    let cat: List[TuiAppEntry] = omarchy_tui_control_catalog();
+    let fb: FontBundle = omarchy_font_bundle_default();
+    if json {
+        println("{\"component\":\"" + json_escape_str(name) + "\",\"version\":\"" + json_escape_str(ver) +
+            "\",\"command\":\"tui-apps\",\"count\":" + list_len(cat).to_string() + ",\"fonts\":{\"mono\":\"" +
+            json_escape_str(fb.mono) + "\",\"ui\":\"" + json_escape_str(fb.ui) + "\",\"icon\":\"" +
+            json_escape_str(fb.icon) + "\",\"emoji\":\"" + json_escape_str(fb.emoji) + "\",\"size_px\":" +
+            fb.size_px.to_string() + "},\"pass\":true}");
+        return Ok(0);
+    }
+    println(name + " " + ver + " tui-apps: count=" + list_len(cat).to_string() + " mono=" + fb.mono +
+        " ui=" + fb.ui + " icon=" + fb.icon + " emoji=" + fb.emoji);
+    return Ok(0);
+}
+
+fn term_app_resolve(id_or_tool: String, sub_in: String, geo: String, theme: String, json: Bool) -> TermAppPlan {
+    let cat: List[TuiAppEntry] = omarchy_tui_control_catalog();
+    let mut tool: String = str_slice(id_or_tool, 0, chars_len(id_or_tool));
+    let mut matched_id: String = str_slice(id_or_tool, 0, chars_len(id_or_tool));
+    let mut subcmd: String = sub_in;
+    let mut i: Int = 0;
+    while i < list_len(cat) {
+        let e: TuiAppEntry = list_get(cat, i);
+        if e.id == id_or_tool || e.tool == id_or_tool {
+            matched_id = e.id;
+            tool = e.tool;
+            if subcmd == "" { subcmd = e.subcmd; }
+            break;
+        }
+        i = i + 1;
+    }
+    if !ooterm_app_spec_valid(str_slice(tool, 0, chars_len(tool)), str_slice(subcmd, 0, chars_len(subcmd))) {
+        return TermAppPlan { id: "", tool: "", subcmd: "", geometry: "floating", cols: 100, rows: 32,
+            theme: "ooda-dark", json: false, ok: false, err: "invalid app tool or subcommand" };
+    }
+    if !ooterm_theme_admit(str_slice(theme, 0, chars_len(theme))) {
+        return TermAppPlan { id: "", tool: "", subcmd: "", geometry: "floating", cols: 100, rows: 32,
+            theme: "ooda-dark", json: false, ok: false, err: "unknown theme " + theme };
+    }
+    let cols: Int = if geo == "tiled" { 120 } else { 100 };
+    let rows: Int = if geo == "tiled" { 36 } else { 32 };
+    return TermAppPlan {
+        id: matched_id, tool: tool, subcmd: subcmd, geometry: geo,
+        cols: cols, rows: rows, theme: theme, json: json, ok: true, err: ""
+    };
+}
+
+pub fn ooterm_app_launch_run(args: List[String], name: String, ver: String) -> Result[Int, String] {
+    let mut tool: String = "";
+    let mut subcmd: String = "";
+    let mut geo: String = "floating";
+    let mut theme: String = "ooda-dark";
+    let mut json: Bool = false;
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if a == "--app" {
+            if i + 1 >= list_len(args) { return Ok(2); }
+            tool = list_get(args, i + 1);
+            i = i + 2;
+            continue;
+        }
+        if a == "--theme" {
+            if i + 1 >= list_len(args) { return Ok(2); }
+            theme = list_get(args, i + 1);
+            i = i + 2;
+            continue;
+        }
+        if a == "--floating" {
+            geo = "floating";
+        } else if a == "--tiled" {
+            geo = "tiled";
+        } else if a == "--json" {
+            json = true;
+        } else if !str_starts_with(a, "-") && tool != "" && subcmd == "" {
+            subcmd = a;
+        } else {
+            println("ERR " + name + " --app: unknown argument " + a);
+            return Ok(2);
+        }
+        i = i + 1;
+    }
+    let p: TermAppPlan = term_app_resolve(tool, subcmd, geo, theme, json);
+    if !p.ok {
+        println("ERR " + name + " --app: " + p.err);
+        return Ok(2);
+    }
+    if p.json {
+        println("{\"component\":\"" + json_escape_str(name) + "\",\"version\":\"" + json_escape_str(ver) +
+            "\",\"command\":\"app\",\"id\":\"" + json_escape_str(p.id) + "\",\"tool\":\"" +
+            json_escape_str(p.tool) + "\",\"subcmd\":\"" + json_escape_str(p.subcmd) +
+            "\",\"geometry\":\"" + p.geometry + "\",\"cols\":" + p.cols.to_string() + ",\"rows\":" +
+            p.rows.to_string() + ",\"theme\":\"" + json_escape_str(p.theme) + "\",\"pass\":true}");
+        return Ok(0);
+    }
+    println(name + " " + ver + " app: tool=" + p.tool + " subcmd=" + p.subcmd + " geometry=" + p.geometry +
+        " cols=" + p.cols.to_string() + " rows=" + p.rows.to_string() + " theme=" + p.theme);
+    return Ok(0);
+}
+
+pub fn ooterm_theme_sync_run(args: List[String], name: String, ver: String) -> Result[Int, String] {
+    let mut tname: String = "";
+    let mut json: Bool = false;
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if a == "theme-sync" {
+            i = i + 1;
+            continue;
+        }
+        if a == "--json" {
+            json = true;
+            i = i + 1;
+            continue;
+        }
+        if str_starts_with(a, "-") || tname != "" {
+            println("ERR " + name + " theme-sync: invalid argument " + a);
+            return Ok(2);
+        }
+        tname = a;
+        i = i + 1;
+    }
+    let spec: OklchThemeSpec = omarchy_oklch_find(tname);
+    if spec.name == "" {
+        println("ERR " + name + " theme-sync: unknown theme " + tname);
+        return Ok(2);
+    }
+    let plan: ThemeFanoutPlan = omarchy_theme_fanout_build(spec, false);
+    if json {
+        println("{\"component\":\"" + json_escape_str(name) + "\",\"version\":\"" + json_escape_str(ver) +
+            "\",\"command\":\"theme-sync\",\"theme\":\"" + json_escape_str(plan.theme_name) +
+            "\",\"mode\":\"" + json_escape_str(plan.mode) + "\",\"terminal_oot\":\"" +
+            json_escape_str(plan.terminal_oot) + "\",\"pass\":true}");
+        return Ok(0);
+    }
+    println(plan.terminal_oot);
+    return Ok(0);
+}

@@ -41,6 +41,8 @@ fn ooterm_cli_kind(a: String) -> String {
     if a == "run" { return "run"; }
     if a == "pty-run" { return "pty-run"; }
     if a == "gui" { return "gui"; }
+    if a == "tui-apps" { return "tui-apps"; }
+    if a == "theme-sync" { return "theme-sync"; }
     if a == "about" { return "about"; }
     return "";
 }
@@ -72,10 +74,10 @@ pub fn ooterm_cli_mode(args: List[String]) -> String {
             continue;
         }
         verbs = verbs + 1;
-        if verbs == 1 {
-            verb = k;
-            want_op = (k == "run" || k == "theme" || k == "pty-run" || k == "gui");
-        }
+    if verbs == 1 {
+        verb = k;
+        want_op = (k == "run" || k == "theme" || k == "theme-sync" || k == "pty-run" || k == "gui");
+    }
         i = i + 1;
     }
     if verbs > 1 { return "conflict"; }

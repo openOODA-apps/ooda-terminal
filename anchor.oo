@@ -29,7 +29,7 @@ import "core/tabs/layout.oo";
 import "core/tabs/set.oo";
 
 pub fn ooterm_version() -> String {
-    return "1.0.0";
+    return "1.1.0";
 }
 
 pub fn ooterm_component_name() -> String {

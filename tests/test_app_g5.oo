@@ -1,0 +1,105 @@
+// # ooda-terminal Track G5 TUI App Launcher & OKLCH Theme Sync Verification Suite
+//
+// Logline: Tests floating/tiled TUI app launch, 5 control centers, font bundle, OKLCH themes, and refusals.
+// Setup: Declared capability: FsRead, Process. Drives live bin/ooda-terminal CLI under PATH=/nonexistent.
+// Beats:
+//   1. Exercise `--app` catalog shortcut & direct tool launches plus invalid/traversal refusal exit 2.
+//   2. Exercise `tui-apps --json`, `theme-sync tokyo-night --json`, and curated OKLCH theme acceptance.
+//   3. Assert `terminal_config_valid` and `ooterm_app_spec_valid` fail-closed invariants under OODA_LEAK_CHECK=1.
+
+import "core/config.oo";
+import "cli/app_launch.oo";
+
+fn g5_ok(cond: Bool, label: String) -> Int {
+    if cond {
+        println("ok " + label);
+        return 1;
+    }
+    println("FAIL " + label);
+    return 0;
+}
+
+fn g5_wait(p: &ProcessCap, bin: String, spec: String) -> Int {
+    let av: List[String] = str_split(spec, "|");
+    return match sys_exec_wait(p, bin, av) { Ok(rc) => rc, Err(_) => -1 };
+}
+
+fn g5_exec(p: &ProcessCap, bin: String, spec: String) -> String {
+    let av: List[String] = str_split(spec, "|");
+    if list_len(av) == 2 { return match sys_exec(p, bin, list_get(av, 0), list_get(av, 1)) { Ok(s) => s, Err(_) => "" }; }
+    if list_len(av) == 3 {
+        return match sys_exec(p, bin, list_get(av, 0), list_get(av, 1), list_get(av, 2)) { Ok(s) => s, Err(_) => "" };
+    }
+    if list_len(av) == 4 {
+        return match sys_exec(p, bin, list_get(av, 0), list_get(av, 1), list_get(av, 2),
+            list_get(av, 3)) { Ok(s) => s, Err(_) => "" };
+    }
+    if list_len(av) == 5 {
+        return match sys_exec(p, bin, list_get(av, 0), list_get(av, 1), list_get(av, 2),
+            list_get(av, 3), list_get(av, 4)) { Ok(s) => s, Err(_) => "" };
+    }
+    return match sys_exec(p, bin, list_get(av, 0)) { Ok(s) => s, Err(_) => "" };
+}
+
+fn test_models(fs_r: &FsReadCap) -> Int {
+    let dot: String = ".";
+    let trav: String = dot + dot + "/evil";
+    let mut cfg: TerminalConfig = terminal_config_load(fs_r, "");
+    cfg.theme = "catppuccin-mocha";
+    let mut n: Int = g5_ok(ooterm_app_spec_valid("ooda-network", "wifi") &&
+        ooterm_app_spec_valid("ooda-filesystem", "snapshot list") &&
+        !ooterm_app_spec_valid(trav, "") && !ooterm_app_spec_valid("a;rm", ""),
+        "g5-01 app launcher spec validation admits valid tools and refuses traversal/metachar");
+    n = n + g5_ok(terminal_config_valid(cfg) && ooterm_theme_admit("tokyo-night") &&
+        !ooterm_theme_admit("bogus-theme"),
+        "g5-02 config accepts curated OKLCH theme pack and refuses unknown");
+    return n;
+}
+
+fn test_cli_app_and_theme(p: &ProcessCap, bin: String) -> Int {
+    let a1: String = g5_exec(p, bin, "--app|ooda-network|wifi|--json");
+    let a2: String = g5_exec(p, bin, "--app|wifi|--tiled|--json");
+    let tuis: String = g5_exec(p, bin, "tui-apps|--json");
+    let ts_ok: String = g5_exec(p, bin, "theme-sync|tokyo-night|--json");
+    let th_cm: String = g5_exec(p, bin, "theme|catppuccin-mocha|--json");
+    let ab_s: String = g5_exec(p, bin, "about|tui-apps|--json");
+    let mut n: Int = g5_chk_str(a1, "\"tool\":\"ooda-network\"", "\"geometry\":\"floating\"", "g5-03 --app direct");
+    n = n + g5_chk_str(a2, "\"id\":\"wifi\"", "\"cols\":120", "g5-04 --app catalog --tiled");
+    n = n + g5_chk_str(tuis, "\"count\":5", "JetBrainsMono", "g5-05 tui-apps catalog & fonts");
+    n = n + g5_chk_str(ts_ok, "\"theme\":\"tokyo-night\"", "\"mode\":\"dark\"", "g5-06 theme-sync tokyo-night");
+    n = n + g5_chk_str(th_cm, "\"theme\":\"catppuccin-mocha\"", "", "g5-07 theme catppuccin-mocha");
+    n = n + g5_chk_str(ab_s, "\"subcommand\":\"tui-apps\"", "", "g5-08 about tui-apps");
+    let dot: String = ".";
+    let trav: String = dot + dot + "/bad";
+    let rc_miss: Int = g5_wait(p, bin, "--app");
+    let rc_trav: Int = g5_wait(p, bin, "--app|" + trav);
+    let rc_badt: Int = g5_wait(p, bin, "--app|wifi|--theme|nosuch");
+    let rc_sync: Int = g5_wait(p, bin, "theme-sync|nosuch");
+    let rc_flag: Int = g5_wait(p, bin, "tui-apps|--bogus");
+    n = n + g5_ok(rc_miss == 2 && rc_trav == 2, "g5-09 --app refuses missing operand and traversal exit 2");
+    n = n + g5_ok(rc_badt == 2, "g5-10 --app refuses unknown theme exit 2");
+    n = n + g5_ok(rc_sync == 2, "g5-11 theme-sync refuses unknown theme exit 2");
+    n = n + g5_ok(rc_flag == 2, "g5-12 tui-apps refuses unknown flag exit 2");
+    return n;
+}
+
+fn g5_chk_str(hay: String, n1: String, n2: String, lbl: String) -> Int {
+    let ok1: Bool = str_contains(hay, n1);
+    let ok2: Bool = if n2 == "" { true } else { str_contains(hay, n2) };
+    return g5_ok(ok1 && ok2, lbl);
+}
+
+pub fn main(fs_r: &FsReadCap, p: &ProcessCap, _a: List[String]) -> Result[Int, String] {
+    let bin: String = "bin/ooda-terminal";
+    if !path_exists(fs_r, bin) {
+        println("FAIL missing bin/ooda-terminal");
+        return Err("missing artifact");
+    }
+    let tot: Int = test_models(fs_r) + test_cli_app_and_theme(p, bin);
+    if tot != 12 {
+        println("FAIL: app_g5 " + tot.to_string() + "/12 assertions");
+        return Err("app_g5 failed");
+    }
+    println("PASS: app_g5 12/12 assertions");
+    return Ok(0);
+}

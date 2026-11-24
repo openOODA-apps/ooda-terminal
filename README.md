@@ -4,8 +4,8 @@ Apps-layer terminal for openOODA-apps. It turns a program's byte stream into a c
 headless replay verb, a live child verb, kitty and sixel graphics, OSC 133 shell integration, tabs and splits, and
 configuration.
 
-- Version: 1.0.0
-- Subcommands: run, pty-run, gui, theme, inspect, status, verify, about
+- Version: 1.1.0
+- Subcommands: run, pty-run, gui, --app, tui-apps, theme-sync, theme, inspect, status, verify, about
 - Capabilities: FsRead, FsWrite, Fs, Process, Env, Ffi
 - Layer: apps
 

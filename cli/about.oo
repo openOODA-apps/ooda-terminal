@@ -14,7 +14,7 @@ import "ooda-standard/core/app/ui/ootheme.oo";
 import "cli/cli.oo";
 
 pub fn ooterm_about_subs() -> String {
-    return "run,pty-run,gui,theme,inspect,status,verify,about";
+    return "run,pty-run,gui,--app,tui-apps,theme-sync,theme,inspect,status,verify,about";
 }
 
 pub fn ooterm_about_caps() -> String {
@@ -28,11 +28,12 @@ pub fn ooterm_about_summary() -> String {
 
 pub fn ooterm_about_sub_known(s: String) -> Bool {
     if s == "run" || s == "pty-run" || s == "gui" || s == "theme" { return true; }
+    if s == "--app" || s == "tui-apps" || s == "theme-sync" { return true; }
     return s == "inspect" || s == "status" || s == "verify" || s == "about";
 }
 
 pub fn ooterm_about_card(tname: String, style: String, hit: String) -> String {
-    let l1: String = "Binary       : ooda-terminal (v1.0.0)";
+    let l1: String = "Binary       : ooda-terminal (v1.1.0)";
     let l2: String = "Organization : openOODA-apps (https://github.com/openOODA-apps/ooda-terminal)";
     let l3: String = "Summary      : " + ooterm_about_summary();
     let l4: String = "Subcommands  : " + ooterm_about_subs();
@@ -47,7 +48,7 @@ pub fn ooterm_about_card(tname: String, style: String, hit: String) -> String {
 
 pub fn ooterm_about_json(tname: String, hit: String) -> String {
     let sub: String = if hit == "" { "" } else { ",\"subcommand\":\"" + json_escape_str(hit) + "\"" };
-    return "{\"component\":\"ooda-terminal\",\"version\":\"1.0.0\"" +
+    return "{\"component\":\"ooda-terminal\",\"version\":\"1.1.0\"" +
         ",\"layer\":\"apps\",\"organization\":\"openOODA-apps\"" + sub +
         ",\"summary\":\"" + json_escape_str(ooterm_about_summary()) + "\"" +
         ",\"subcommands\":\"" + ooterm_about_subs() + "\"" +
@@ -56,7 +57,7 @@ pub fn ooterm_about_json(tname: String, hit: String) -> String {
 }
 
 fn ooterm_about_refusal(target: String, reason: String) -> String {
-    return "{\"component\":\"ooda-terminal\",\"version\":\"1.0.0\",\"command\":\"about\"" +
+    return "{\"component\":\"ooda-terminal\",\"version\":\"1.1.0\",\"command\":\"about\"" +
         ",\"target\":\"" + json_escape_str(target) + "\",\"pass\":false" +
         ",\"error\":\"" + json_escape_str(reason) + "\"}";
 }

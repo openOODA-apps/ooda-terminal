@@ -14,6 +14,7 @@ import "ooda-standard/fs/os/fs/fs.oo";
 import "ooda-standard/fs/os/fs.oo";
 import "ooda-standard/fs/file/fs_grp/fs_invariants.oo";
 import "ooda-standard/core/app/ui/ootheme.oo";
+import "ooda-standard/core/app/ui/omarchy/theme_fanout.oo";
 
 pub type TerminalConfig = struct {
     theme: String,
@@ -76,7 +77,7 @@ pub fn terminal_config_load(fs_r: &FsReadCap, path: String) -> TerminalConfig {
     if rd.is_err() { return cfg; }
     let body: String = rd.unwrap();
     let theme: String = terminal_config_value(body, "theme");
-    if theme != "" && ootheme_known(theme) { cfg.theme = theme; }
+    if theme != "" && (ootheme_known(theme) || omarchy_oklch_find(theme).name != "") { cfg.theme = theme; }
     let cols: String = terminal_config_value(body, "cols");
     if cols != "" { cfg.cols = terminal_config_count(cols, TERMINAL_DEFAULT_COLS); }
     let rows: String = terminal_config_value(body, "rows");
@@ -90,7 +91,7 @@ pub fn terminal_config_load(fs_r: &FsReadCap, path: String) -> TerminalConfig {
 pub fn terminal_config_valid(cfg: TerminalConfig) -> Bool {
     if cfg.cols <= 0 || cfg.cols > TERMINAL_MAX_COLS { return false; }
     if cfg.rows <= 0 || cfg.rows > TERMINAL_MAX_ROWS { return false; }
-    if ootheme_known(cfg.theme) == false { return false; }
+    if !ootheme_known(cfg.theme) && omarchy_oklch_find(cfg.theme).name == "" { return false; }
     if chars_len(cfg.prog) > 0 {
         if str_starts_with(cfg.prog, "-") { return false; }
         if str_contains(cfg.prog, ";") { return false; }

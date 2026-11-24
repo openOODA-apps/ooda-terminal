@@ -1,4 +1,4 @@
-# openOODA (.oo) Agent Quick Card for openOODA-apps/ooda-terminal v1.0.0
+# openOODA (.oo) Agent Quick Card for openOODA-apps/ooda-terminal v1.1.0
 1. **The 8 Canonical Quick Cards** (Zero-bloat ~24-line cards built into `ooda`):
    - `ooda ooda`     -> `ooda.md`     (How to rapidly build, test, and adapt openOODA software)
    - `ooda layers`   -> `layers.md`   (The 8-Layer Architecture Map `L0`–`L7` across Desktop, Server & Mobile)
@@ -17,7 +17,7 @@
    - Relative string imports only (`import "core/replay.oo";` or `import "ooda-standard/core/app/ui/term/anchor.oo";`, never `::`). No parens on `if cond { }` / `while cond { }`. No struct trailing commas. Connect all CLI/TUI/GUI output to `ooda-theme` and expose `<binary> about`.
    - **The VT500 engine is never re-implemented here.** The parser, the grid, the screen semantics, the pixel raster, and the replay session live in `ooda-standard/core/app/ui/term` and are imported as `ooda-standard/core/app/ui/term/...`. Import the term **anchor** only, so the package builds against both the installed standard and the source tree. The portability gate refuses `/dev/ptmx`, `/dev/pts/`, `/dev/tty`, and `ioctl`/`termios` plumbing in a `layer=apps` package, so the pty host must be the capability-gated `ooda-standard/fs/os/host_grp/host_pty.oo` page, never a local device path.
    - Build & Verify: `ooda build && ooda test && ooda check && ooda audit`.
-4. **This app**: ooda-terminal v1.0.0, org openOODA-apps, layer apps. The single terminal product: transcript replay, live pty child, desktop window, kitty and sixel graphics, OSC 133 shell integration, tabs and splits, configuration, theme, about. Capabilities FsRead, FsWrite, Fs, Process, Env, Ffi.
+4. **This app**: ooda-terminal v1.1.0, org openOODA-apps, layer apps. The single terminal product: transcript replay, live pty child, desktop window, kitty and sixel graphics, OSC 133 shell integration, tabs and splits, configuration, theme, about. Capabilities FsRead, FsWrite, Fs, Process, Env, Ffi.
 
 ## Canonical Layout
 
